@@ -438,6 +438,10 @@ if (isProduction) {
   })
 }
 
-app.listen(port, () => {
-  console.log(`GEO OPTIMIZER AI running on http://localhost:${port}`)
-})
+if (!process.env.VERCEL) {
+  app.listen(port, () => {
+    console.log(`GEO OPTIMIZER AI running on http://localhost:${port}`)
+  })
+}
+
+export default app
