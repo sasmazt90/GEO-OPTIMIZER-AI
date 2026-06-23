@@ -373,12 +373,24 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 }
 .primary-button:hover { background: linear-gradient(135deg, var(--accent-dark) 0%, #1e40af 100%); }
 .primary-button:disabled { opacity: 0.75; cursor: wait; }
+.ghost-button.small {
+  min-height: 38px;
+  padding: 0 12px;
+  font-size: 13px;
+}
 .spin { animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.account-panel {
+.account-stack {
+  display: grid;
+  gap: 16px;
   max-width: 760px;
+}
+.account-panel {
   padding: 26px;
+}
+.account-message {
+  margin: 0;
 }
 .account-head {
   display: flex;
@@ -417,6 +429,11 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
   gap: 22px;
+}
+.result-side-actions {
+  display: grid;
+  justify-items: end;
+  gap: 12px;
 }
 .result-top strong { display: block; color: var(--navy); font-size: 20px; }
 .result-panel.wide .result-top strong { font-size: 26px; line-height: 1.16; }

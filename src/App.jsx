@@ -7,9 +7,11 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Download,
   Eye,
   FilePenLine,
   History,
+  KeyRound,
   Loader2,
   LogOut,
   Menu,
@@ -172,6 +174,78 @@ async function callApi(payload) {
     throw new Error(data.error || 'Analysis is temporarily unavailable. Please try again shortly.')
   }
   return response.json()
+}
+
+function reportLabel(toolId) {
+  const labels = {
+    brand: 'Brand Entity Report',
+    crawler: 'Crawler Simulation Report',
+    visibility: 'AI Visibility Report',
+    fanout: 'Query Intelligence Report',
+    research: 'Prompt Research Report',
+    landing: 'Landing Page Report',
+    content: 'Content Creator Report',
+    check: 'Content Check Report',
+    benchmark: 'Benchmark Report',
+  }
+  return labels[toolId] || 'GEO Optimizer Report'
+}
+
+function safeCell(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function tableHtml(title, headers, rows) {
+  if (!rows?.length) return ''
+  return `<h2>${safeCell(title)}</h2><table border="1"><thead><tr>${headers.map((header) => `<th>${safeCell(header)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${safeCell(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table>`
+}
+
+function rowsFromSections(sections = []) {
+  return sections.flatMap((section) => (section.items || []).map((item) => [section.title, item]))
+}
+
+function buildReportWorkbook(toolId, data) {
+  const generatedAt = new Date().toLocaleString()
+  const sections = Array.isArray(data.sections) ? data.sections : []
+  const metrics = Array.isArray(data.metrics) ? data.metrics : []
+  const bullets = Array.isArray(data.bullets) ? data.bullets : []
+  const html = [
+    '<html><head><meta charset="utf-8" /></head><body>',
+    `<h1>${safeCell(reportLabel(toolId))}</h1>`,
+    tableHtml('Overview', ['Field', 'Value'], [
+      ['Generated at', generatedAt],
+      ['Title', data.title || reportLabel(toolId)],
+      ['Score', data.score ?? '-'],
+      ['Summary', data.summary || '-'],
+    ]),
+    tableHtml('Metrics', ['Metric', 'Value'], metrics.map((metric) => [metric.label, metric.value])),
+    tableHtml('Status and Recommendations', ['Section', 'Item'], rowsFromSections(sections)),
+    tableHtml('Action Items', ['Recommendation'], bullets.map((item) => [item])),
+    tableHtml('Generated Queries', ['Query', 'Intent'], (data.queries || []).map((item) => [item.query || item, item.intent || item.reason || ''])),
+    tableHtml('Model Presence', ['AI Surface', 'Presence', 'Confidence', 'Evidence / Gap', 'Next Action'], (data.models || []).map((row) => [row.model || row.surface, row.presence || row.status, row.confidence || '-', row.evidence || row.reason || '-', row.nextAction || row.action || '-'])),
+    tableHtml('Top Brands', ['Rank', 'Brand', 'Visibility', 'Status', 'Primary Driver'], (data.brands || []).map((row, index) => [row.rank || index + 1, row.brand, row.share, row.sentiment, row.reason])),
+    tableHtml('Crawler Results', ['Crawler', 'Status', 'HTTP Code'], (data.rows || []).map((row) => [row.name, row.status, row.code])),
+    '</body></html>',
+  ].join('')
+  return html
+}
+
+function downloadExcelReport(toolId, data) {
+  const workbook = buildReportWorkbook(toolId, data || {})
+  const blob = new Blob([workbook], { type: 'application/vnd.ms-excel;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  const stamp = new Date().toISOString().slice(0, 10)
+  link.href = url
+  link.download = `${toolId || 'geo'}-report-${stamp}.xls`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }
 
 function App() {
@@ -412,9 +486,11 @@ function LegalPage({ page, onBack }) {
 
 function AccountSettings({ user, onBack, onUpdated }) {
   const [name, setName] = useState(user.name || '')
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' })
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [passwordSaving, setPasswordSaving] = useState(false)
 
   async function saveProfile(event) {
     event.preventDefault()
@@ -460,26 +536,74 @@ function AccountSettings({ user, onBack, onUpdated }) {
     }
   }
 
+  async function changePassword(event) {
+    event.preventDefault()
+    setPasswordSaving(true)
+    setError('')
+    setMessage('')
+    try {
+      if (passwordForm.newPassword !== passwordForm.confirmPassword) throw new Error('New passwords do not match.')
+      const response = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          currentPassword: passwordForm.currentPassword,
+          newPassword: passwordForm.newPassword,
+        }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Password could not be changed.')
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
+      setMessage(data.message || 'Password changed successfully.')
+    } catch (passwordError) {
+      setError(passwordError.message)
+    } finally {
+      setPasswordSaving(false)
+    }
+  }
+
   return (
-    <section className="panel account-panel">
-      <div className="account-head">
-        <div>
-          <p className="eyeline">Profile</p>
-          <h2>Your account</h2>
+    <div className="account-stack">
+      {message && <p className="auth-success account-message">{message}</p>}
+      {error && <p className="auth-error account-message">{error}</p>}
+      <section className="panel account-panel">
+        <div className="account-head">
+          <div>
+            <p className="eyeline">Profile</p>
+            <h2>Your account</h2>
+          </div>
+          <button className="ghost-button" onClick={onBack}>Back to tools</button>
         </div>
-        <button className="ghost-button" onClick={onBack}>Back to tools</button>
-      </div>
-      <form onSubmit={saveProfile} className="account-form">
-        <Field label="Name" required><input value={name} onChange={(event) => setName(event.target.value)} /></Field>
-        <Field label="Email"><input value={user.email} readOnly /></Field>
-        {message && <p className="auth-success">{message}</p>}
-        {error && <p className="auth-error">{error}</p>}
-        <div className="account-actions">
-          <button className="primary-button" disabled={saving}>{saving ? <Loader2 className="spin" size={17} /> : <UserRound size={17} />}Save Profile</button>
-          <button type="button" className="ghost-button" onClick={sendReset} disabled={saving}>Send Password Reset</button>
+        <form onSubmit={saveProfile} className="account-form">
+          <Field label="Name" required><input value={name} onChange={(event) => setName(event.target.value)} /></Field>
+          <Field label="Email"><input value={user.email} readOnly /></Field>
+          <div className="account-actions">
+            <button className="primary-button" disabled={saving}>{saving ? <Loader2 className="spin" size={17} /> : <UserRound size={17} />}Save Profile</button>
+            <button type="button" className="ghost-button" onClick={sendReset} disabled={saving}>Send Password Reset</button>
+          </div>
+        </form>
+      </section>
+
+      <section className="panel account-panel">
+        <div className="account-head">
+          <div>
+            <p className="eyeline">Security</p>
+            <h2>Change password</h2>
+          </div>
         </div>
-      </form>
-    </section>
+        <form onSubmit={changePassword} className="account-form">
+          <Field label="Current password" required><input type="password" autoComplete="current-password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm({ ...passwordForm, currentPassword: event.target.value })} /></Field>
+          <div className="two-col">
+            <Field label="New password" required><input type="password" autoComplete="new-password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm({ ...passwordForm, newPassword: event.target.value })} /></Field>
+            <Field label="Confirm new password" required><input type="password" autoComplete="new-password" value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm({ ...passwordForm, confirmPassword: event.target.value })} /></Field>
+          </div>
+          <div className="account-actions">
+            <button className="primary-button" disabled={passwordSaving}>{passwordSaving ? <Loader2 className="spin" size={17} /> : <KeyRound size={17} />}Change Password</button>
+          </div>
+        </form>
+      </section>
+    </div>
   )
 }
 
@@ -724,7 +848,10 @@ function ResultPanel({ toolId, result, loading, error, wide = false }) {
           <p className="eyeline">Result</p>
           <strong>{data.title || (loading ? 'Analysis in progress' : 'Analysis result')}</strong>
         </div>
-        {!hideScore && <ScoreBlock score={data.score} loading={loading} label={toolId === 'check' ? 'Compliance Score' : 'Confidence Score'} />}
+        <div className="result-side-actions">
+          <button type="button" className="ghost-button small" onClick={() => downloadExcelReport(toolId, data)}><Download size={16} />Download Excel Report</button>
+          {!hideScore && <ScoreBlock score={data.score} loading={loading} label={toolId === 'check' ? 'Compliance Score' : 'Confidence Score'} />}
+        </div>
       </div>
       {error ? (
         <p className="result-error">{error}</p>
@@ -1221,8 +1348,21 @@ function CrawlerResultPanel({ rows, loading, error, wide = false }) {
   const blocked = rows.length - allowed
   return (
     <section className={`panel result-panel crawler-result${wide ? ' wide' : ''}`}>
-      <p className="eyeline">Crawler Access Result</p>
-      <strong>{allowed} of {rows.length} AI crawlers can access the URL</strong>
+      <div className="result-header-grid">
+        <div className="result-top">
+          <p className="eyeline">Crawler Access Result</p>
+          <strong>{allowed} of {rows.length} AI crawlers can access the URL</strong>
+        </div>
+        <div className="result-side-actions">
+          <button type="button" className="ghost-button small" onClick={() => downloadExcelReport('crawler', {
+            title: 'Crawler Access Result',
+            score: rows.length ? Math.round((allowed / rows.length) * 100) : 0,
+            summary: blocked ? 'Some crawler user-agents could not access the URL.' : 'All tested crawler user-agents received successful HTTP responses.',
+            metrics: [{ label: 'Allowed', value: allowed }, { label: 'Blocked / Error', value: blocked }],
+            rows,
+          })}><Download size={16} />Download Excel Report</button>
+        </div>
+      </div>
       {error ? <p className="result-error">{error}</p> : <p className="result-summary">{loading ? 'Testing crawler user-agents...' : blocked ? 'Some AI crawlers could not access the URL. Review bot protection, firewall rules, CDN settings, and robots policies.' : 'The tested AI crawler user-agents received successful HTTP responses.'}</p>}
       <MetricGrid metrics={[{ label: 'Allowed', value: allowed }, { label: 'Blocked / Error', value: blocked }]} />
       <StatusBoard sections={{

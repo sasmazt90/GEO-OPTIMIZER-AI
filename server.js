@@ -105,6 +105,10 @@ const passwordUpdateSchema = z.object({
   accessToken: z.string().min(20),
   password: z.string().min(8).max(120),
 })
+const passwordChangeSchema = z.object({
+  currentPassword: z.string().min(8).max(120),
+  newPassword: z.string().min(8).max(120),
+})
 const generateSchema = z.object({
   tool: z.enum(['brand', 'visibility', 'fanout', 'research', 'landing', 'content', 'check', 'benchmark']).default('brand'),
   input: z.record(z.string(), z.unknown()).default({}),
@@ -661,6 +665,21 @@ app.post('/api/auth/update-password', async (req, res) => {
   if (updateError) return res.status(400).json({ error: updateError.message })
   clearAuthCookies(res)
   res.json({ ok: true, message: 'Password updated. Please sign in again.' })
+})
+
+app.post('/api/auth/change-password', requireAuth, async (req, res) => {
+  const parsed = passwordChangeSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid password change request' })
+  const { error: verifyError } = await supabaseAuth.auth.signInWithPassword({
+    email: req.user.email,
+    password: parsed.data.currentPassword,
+  })
+  if (verifyError) return res.status(401).json({ error: 'Current password is incorrect.' })
+  const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, {
+    password: parsed.data.newPassword,
+  })
+  if (updateError) return res.status(400).json({ error: updateError.message })
+  res.json({ ok: true, message: 'Password changed successfully.' })
 })
 
 app.post('/api/auth/logout', (req, res) => {
