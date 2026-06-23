@@ -918,6 +918,7 @@ function ToolSpecificResult({ toolId, data }) {
   const bullets = Array.isArray(data.bullets) ? data.bullets : []
   const statusSections = extractStatusSections(sections, bullets, data.score)
   const detailSections = sections.filter((section) => !statusKind(section.title || section.heading || ''))
+  const uncategorizedBullets = hasStatusContent(statusSections) ? [] : bullets
 
   if (toolId === 'fanout') {
     const queries = Array.isArray(data.queries) ? data.queries : bullets.map((query) => ({ query, intent: 'Related search path' }))
@@ -977,7 +978,7 @@ function ToolSpecificResult({ toolId, data }) {
         <MetricGrid metrics={metrics} />
         <StatusBoard sections={statusSections} />
         <BenchmarkTable rows={data.brands || []} />
-        <ul className="recommendations">{bullets.map((item) => <li key={item}><CheckCircle2 size={16} />{item}</li>)}</ul>
+        <RecommendationsList items={uncategorizedBullets} />
       </>
     )
   }
@@ -989,7 +990,7 @@ function ToolSpecificResult({ toolId, data }) {
         <StatusBoard sections={statusSections} />
         <ModelPresenceTable rows={data.models || []} />
         <ResultSections sections={detailSections} />
-        <ul className="recommendations">{bullets.map((item) => <li key={item}><CheckCircle2 size={16} />{item}</li>)}</ul>
+        <RecommendationsList items={uncategorizedBullets} />
       </>
     )
   }
@@ -999,8 +1000,23 @@ function ToolSpecificResult({ toolId, data }) {
       <MetricGrid metrics={metrics} />
       <StatusBoard sections={statusSections} />
       <ResultSections sections={detailSections} />
-      <ul className="recommendations">{bullets.map((item) => <li key={item}><CheckCircle2 size={16} />{item}</li>)}</ul>
+      <RecommendationsList items={uncategorizedBullets} />
     </>
+  )
+}
+
+function hasStatusContent(sections) {
+  return ['done', 'improve', 'missing'].some((key) => Array.isArray(sections[key]) && sections[key].length > 0)
+}
+
+function RecommendationsList({ items }) {
+  if (!Array.isArray(items) || !items.length) return null
+  return (
+    <ResultSection title="Recommendations">
+      <ul className="recommendations">
+        {items.map((item) => <li key={item}><CheckCircle2 size={16} />{item}</li>)}
+      </ul>
+    </ResultSection>
   )
 }
 
