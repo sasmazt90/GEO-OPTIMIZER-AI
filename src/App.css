@@ -96,6 +96,23 @@ button { cursor: pointer; }
   font-weight: 800;
   white-space: nowrap;
 }
+.profile-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 10px;
+  color: var(--navy);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-weight: 900;
+}
+.profile-button:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
 
 .workspace {
   display: grid;
@@ -287,8 +304,8 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .select-wrap { position: relative; }
 .select-wrap select { appearance: none; padding-right: 40px; }
 .select-wrap svg { position: absolute; right: 13px; top: 13px; color: #111827; pointer-events: none; }
-.quick-picks, .mode-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
-.quick-picks button, .mode-row button, .ghost-button {
+.mode-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.mode-row button, .ghost-button {
   min-height: 36px;
   padding: 0 13px;
   color: #344054;
@@ -324,6 +341,37 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .primary-button:disabled { opacity: 0.75; cursor: wait; }
 .spin { animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.account-panel {
+  max-width: 760px;
+  padding: 26px;
+}
+.account-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.account-head h2 {
+  margin: 0;
+  color: var(--navy);
+  font-size: 24px;
+}
+.account-form {
+  display: grid;
+  gap: 2px;
+}
+.account-form input[readonly] {
+  color: var(--muted);
+  background: #f5f5f4;
+}
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
 
 .result-panel { padding: 22px; }
 .result-top strong { display: block; color: var(--navy); font-size: 20px; }

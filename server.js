@@ -78,6 +78,9 @@ const authSchema = z.object({
 const emailSchema = z.object({
   email: z.string().trim().email().max(160),
 })
+const profileSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+})
 const sessionSchema = z.object({
   accessToken: z.string().min(20),
   refreshToken: z.string().min(20).optional(),
@@ -426,6 +429,17 @@ app.post('/api/auth/logout', (req, res) => {
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ user: publicUser(req.user, req.profile) })
+})
+
+app.put('/api/auth/profile', requireAuth, async (req, res) => {
+  const parsed = profileSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid profile details' })
+  const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, {
+    user_metadata: { ...req.user.user_metadata, name: parsed.data.name },
+  })
+  if (updateError) return res.status(400).json({ error: updateError.message })
+  const profile = await upsertProfile({ ...req.user, user_metadata: { ...req.user.user_metadata, name: parsed.data.name } }, parsed.data.name)
+  res.json({ user: publicUser(req.user, profile) })
 })
 
 app.get('/api/runs', requireAuth, async (req, res) => {

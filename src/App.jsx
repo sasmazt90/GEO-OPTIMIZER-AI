@@ -14,6 +14,7 @@ import {
   Loader2,
   LogOut,
   Menu,
+  UserRound,
   Search,
   ShieldCheck,
   Wand2,
@@ -106,6 +107,7 @@ function App() {
   const [mobileNav, setMobileNav] = useState(false)
   const [navCollapsed, setNavCollapsed] = useState(false)
   const [legalPage, setLegalPage] = useState('')
+  const [accountPage, setAccountPage] = useState(false)
   const [authLoading, setAuthLoading] = useState(true)
   const [user, setUser] = useState(null)
   const [runs, setRuns] = useState([])
@@ -164,6 +166,7 @@ function App() {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
     setUser(null)
     setRuns([])
+    setAccountPage(false)
   }
 
   if (authLoading) return <LoadingScreen />
@@ -171,7 +174,7 @@ function App() {
   if (legalPage) {
     return (
       <div className="app-shell">
-        <AppHeader user={user} logout={logout} onMenu={() => setMobileNav(true)} />
+        <AppHeader user={user} logout={logout} onMenu={() => setMobileNav(true)} onProfile={() => { setLegalPage(''); setAccountPage(true) }} />
         <LegalPage page={legalPage} onBack={() => setLegalPage('')} />
         <Footer onLegal={setLegalPage} />
       </div>
@@ -197,7 +200,7 @@ function App() {
 
   return (
     <div className="app-shell">
-      <AppHeader user={user} logout={logout} onMenu={() => setMobileNav(true)} />
+      <AppHeader user={user} logout={logout} onMenu={() => setMobileNav(true)} onProfile={() => setAccountPage(true)} />
 
       {mobileNav && (
         <div className="mobile-drawer">
@@ -212,6 +215,7 @@ function App() {
                 className={tool.id === activeTool ? 'drawer-item active' : 'drawer-item'}
                 onClick={() => {
                   setActiveTool(tool.id)
+                  setAccountPage(false)
                   setMobileNav(false)
                 }}
               >
@@ -230,7 +234,7 @@ function App() {
           </button>
           <nav className="side-nav" aria-label="Tools">
             {tools.map((tool) => (
-              <button key={tool.id} className={tool.id === activeTool ? 'side-nav-item active' : 'side-nav-item'} onClick={() => setActiveTool(tool.id)} title={tool.label}>
+              <button key={tool.id} className={!accountPage && tool.id === activeTool ? 'side-nav-item active' : 'side-nav-item'} onClick={() => { setActiveTool(tool.id); setAccountPage(false) }} title={tool.label}>
                 <tool.icon size={18} />
                 <span>{tool.label}</span>
               </button>
@@ -240,7 +244,7 @@ function App() {
             <div><History size={15} /><strong>Recent runs</strong></div>
             {runs.length === 0 && <p>No saved runs yet.</p>}
             {runs.slice(0, 5).map((run) => (
-              <button key={run.id} onClick={() => setActiveTool(run.type === 'crawler' ? 'crawler' : run.type)}>
+              <button key={run.id} onClick={() => { setActiveTool(run.type === 'crawler' ? 'crawler' : run.type); setAccountPage(false) }}>
                 <span>{run.type}</span>
                 <small>{new Date(run.createdAt).toLocaleDateString()}</small>
               </button>
@@ -249,10 +253,14 @@ function App() {
         </aside>
         <section className="tool-surface">
           <div className="current-tool">
-            <h1>{active.label}</h1>
-            <p>{active.tag}</p>
+            <h1>{accountPage ? 'Account Settings' : active.label}</h1>
+            <p>{accountPage ? 'Manage your profile and sign-in details' : active.tag}</p>
           </div>
-          <ToolRouter activeTool={activeTool} onRunComplete={loadRuns} />
+          {accountPage ? (
+            <AccountSettings user={user} onBack={() => setAccountPage(false)} onUpdated={setUser} />
+          ) : (
+            <ToolRouter activeTool={activeTool} onRunComplete={loadRuns} />
+          )}
         </section>
       </main>
       <Footer onLegal={setLegalPage} />
@@ -260,7 +268,7 @@ function App() {
   )
 }
 
-function AppHeader({ user, logout, onMenu }) {
+function AppHeader({ user, logout, onMenu, onProfile }) {
   return (
     <header className="topbar">
       <button className="icon-button mobile-only" onClick={onMenu} aria-label="Open navigation">
@@ -275,7 +283,10 @@ function AppHeader({ user, logout, onMenu }) {
       </div>
       {user && (
         <div className="account-chip">
-          <span>{user.name}</span>
+          <button className="profile-button" onClick={onProfile} aria-label="Open profile settings">
+            <UserRound size={17} />
+            <span>{user.name}</span>
+          </button>
           <button className="icon-button" onClick={logout} aria-label="Sign out"><LogOut size={17} /></button>
         </div>
       )}
@@ -323,6 +334,79 @@ function LegalPage({ page, onBack }) {
         </section>
       ))}
     </main>
+  )
+}
+
+function AccountSettings({ user, onBack, onUpdated }) {
+  const [name, setName] = useState(user.name || '')
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function saveProfile(event) {
+    event.preventDefault()
+    setSaving(true)
+    setError('')
+    setMessage('')
+    try {
+      const response = await fetch('/api/auth/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ name }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Profile could not be updated.')
+      onUpdated(data.user)
+      setMessage('Profile updated.')
+    } catch (profileError) {
+      setError(profileError.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function sendReset() {
+    setSaving(true)
+    setError('')
+    setMessage('')
+    try {
+      const response = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email: user.email }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Reset email could not be sent.')
+      setMessage('Password reset email sent.')
+    } catch (resetError) {
+      setError(resetError.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="panel account-panel">
+      <div className="account-head">
+        <div>
+          <p className="eyeline">Profile</p>
+          <h2>Your account</h2>
+        </div>
+        <button className="ghost-button" onClick={onBack}>Back to tools</button>
+      </div>
+      <form onSubmit={saveProfile} className="account-form">
+        <Field label="Name" required><input value={name} onChange={(event) => setName(event.target.value)} /></Field>
+        <Field label="Email"><input value={user.email} readOnly /></Field>
+        {message && <p className="auth-success">{message}</p>}
+        {error && <p className="auth-error">{error}</p>}
+        <div className="account-actions">
+          <button className="primary-button" disabled={saving}>{saving ? <Loader2 className="spin" size={17} /> : <UserRound size={17} />}Save Profile</button>
+          <button type="button" className="ghost-button" onClick={sendReset} disabled={saving}>Send Password Reset</button>
+        </div>
+      </form>
+    </section>
   )
 }
 
@@ -568,7 +652,6 @@ function BrandEntity({ onRunComplete }) {
         <Field label="Country"><SelectField value={form.country} onChange={(country) => setForm({ ...form, country })} options={countries} /></Field>
         <Field label="Language"><SelectField value={form.language} onChange={(language) => setForm({ ...form, language })} options={languages} /></Field>
       </div>
-      <div className="quick-picks">{['Notion', 'Anthropic', 'Stripe', 'Basecamp', 'Miro'].map((x) => <button key={x} onClick={() => setForm({ ...form, brand: x })}>{x}</button>)}</div>
     </ToolFrame>
   )
 }
