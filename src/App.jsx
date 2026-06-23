@@ -918,7 +918,8 @@ function ToolSpecificResult({ toolId, data }) {
   const bullets = Array.isArray(data.bullets) ? data.bullets : []
   const statusSections = extractStatusSections(sections, bullets, data.score)
   const detailSections = sections.filter((section) => !statusKind(section.title || section.heading || ''))
-  const uncategorizedBullets = hasStatusContent(statusSections) ? [] : bullets
+  const hasStatus = hasStatusContent(statusSections)
+  const uncategorizedBullets = hasStatus ? [] : bullets
 
   if (toolId === 'fanout') {
     const queries = Array.isArray(data.queries) ? data.queries : bullets.map((query) => ({ query, intent: 'Related search path' }))
@@ -947,7 +948,7 @@ function ToolSpecificResult({ toolId, data }) {
       <>
         <MetricGrid metrics={metrics} />
         <StatusBoard sections={statusSections} />
-        <ResultSections sections={detailSections.length ? detailSections : [{ title: 'Prompt Buckets', items: bullets }]} />
+        <ResultSections sections={detailSections.length ? detailSections : fallbackDetailSections('Prompt Buckets', uncategorizedBullets)} />
       </>
     )
   }
@@ -957,7 +958,7 @@ function ToolSpecificResult({ toolId, data }) {
       <>
         <MetricGrid metrics={metrics} />
         <StatusBoard sections={statusSections} />
-        <ResultSections sections={detailSections.length ? detailSections : [{ title: 'Recommended Page Blocks', items: bullets }]} />
+        <ResultSections sections={detailSections.length ? detailSections : fallbackDetailSections('Recommended Page Blocks', uncategorizedBullets)} />
       </>
     )
   }
@@ -967,7 +968,7 @@ function ToolSpecificResult({ toolId, data }) {
       <>
         <MetricGrid metrics={metrics} />
         <StatusBoard sections={statusSections} />
-        <ResultSections sections={detailSections.length ? detailSections : [{ title: 'Content Outline', items: bullets }]} />
+        <ResultSections sections={detailSections.length ? detailSections : fallbackDetailSections('Content Outline', uncategorizedBullets)} />
       </>
     )
   }
@@ -1007,6 +1008,10 @@ function ToolSpecificResult({ toolId, data }) {
 
 function hasStatusContent(sections) {
   return ['done', 'improve', 'missing'].some((key) => Array.isArray(sections[key]) && sections[key].length > 0)
+}
+
+function fallbackDetailSections(title, items) {
+  return Array.isArray(items) && items.length ? [{ title, items }] : []
 }
 
 function RecommendationsList({ items }) {
