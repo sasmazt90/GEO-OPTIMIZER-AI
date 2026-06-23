@@ -38,54 +38,21 @@ const tools = [
 
 const promptModes = ['Your brand', 'SEO keywords', 'A website', 'Advanced', 'Query Fan Out']
 const crawlers = ['GPTBot', 'ChatGPT-User', 'OAI-SearchBot', 'Googlebot', 'GoogleOther', 'PerplexityBot', 'ClaudeBot', 'Grok']
-const benchmarkBrands = ['HubSpot', 'Semrush', 'Ahrefs', 'Shopify', 'Notion', 'Salesforce', 'Adobe', 'Canva', 'Zapier', 'Monday.com']
-
-function defaultResult(toolId) {
-  const map = {
-    brand: {
-      title: 'Brand entity snapshot',
-      score: 78,
-      summary: 'Your brand has recognizable entity signals, but AI engines need clearer third-party corroboration and concise sameAs references.',
-      bullets: ['Add organization schema with sameAs links', 'Create a short brand facts section', 'Mention founder, category, location, and primary use cases consistently'],
-    },
-    fanout: {
-      title: 'Fan-out map',
-      score: 84,
-      summary: 'The source query expands into comparison, alternatives, pricing, implementation, and best-for prompts across AI answer engines.',
-      bullets: ['Best tools for the job-to-be-done', 'Alternatives to incumbent providers', 'Pricing and integration constraints', 'Use-case specific buying questions'],
-    },
-    research: {
-      title: 'Prompt research set',
-      score: 91,
-      summary: 'A complete monitoring set should combine branded prompts, bottom-funnel non-branded prompts, competitor prompts, and persona-led prompts.',
-      bullets: ['Build 30 branded prompts', 'Build 40 competitor prompts', 'Build 25 persona prompts', 'Refresh monthly by country and language'],
-    },
-    landing: {
-      title: 'Landing page outline',
-      score: 88,
-      summary: 'The landing page should answer the main query directly, include entity facts, proof, comparison context, FAQs, and extractable summaries.',
-      bullets: ['Lead with a direct answer block', 'Add an evidence table', 'Use FAQ schema and concise headings', 'Close with a short decision guide'],
-    },
-    content: {
-      title: 'Generated content brief',
-      score: 86,
-      summary: 'The content should be conversational, source-friendly, quote-ready, and structured around AI answer snippets.',
-      bullets: ['Add a 60-word answer summary', 'Use comparison tables where relevant', 'Include examples and FAQs', 'Reference credible external sources'],
-    },
-    check: {
-      title: 'GEO compliance review',
-      score: 73,
-      summary: 'The content is readable, but it needs stronger factual extraction points, author/entity context, and answer-first formatting.',
-      bullets: ['Move the answer above the fold', 'Add author and organization context', 'Break long sections into clear answer blocks', 'Add date-sensitive review notes'],
-    },
-    benchmark: {
-      title: 'Benchmark ranking',
-      score: 82,
-      summary: 'Top brands are ranked by likely mention share, topical authority, citation footprint, and answer-engine entity clarity.',
-      bullets: ['Track competitors weekly', 'Separate global and local benchmarks', 'Compare branded and non-branded prompt visibility'],
-    },
-  }
-  return map[toolId] || map.brand
+const fanoutModeHelp = {
+  'Your brand': 'Enter your brand or branded search prompt',
+  'SEO keywords': 'Enter SEO keywords, one per line or comma-separated',
+  'A website': 'Enter a website URL to infer likely AI search prompts',
+  Advanced: 'Enter a detailed market, persona, competitor, or topic brief',
+  'Query Fan Out': 'Enter the source query you want expanded',
+}
+const resultPlaceholders = {
+  brand: 'Enter a brand, domain, country, and language to check entity clarity across AI answer surfaces.',
+  fanout: 'Enter a prompt and select a mode to see how AI search systems may expand it into related sub-queries.',
+  research: 'Complete the research inputs to generate a monitoring prompt set for brand, competitor, persona, topic, and SEO visibility.',
+  landing: 'Fill in the landing page brief to generate an answer-first GEO page structure.',
+  content: 'Provide a prompt or URLs to create GEO-ready content or a content brief.',
+  check: 'Paste content or add a URL to receive a GEO compliance review.',
+  benchmark: 'Enter a prompt, country, and language to rank likely visible brands.',
 }
 
 async function callApi(payload) {
@@ -551,7 +518,7 @@ function SelectField({ value, onChange, options }) {
   )
 }
 
-function ToolFrame({ title, badge, children, result, loading, error, onRun, action = 'Start Analysis' }) {
+function ToolFrame({ toolId, title, badge, children, result, loading, error, onRun, action = 'Start Analysis' }) {
   return (
     <>
       <div className="tool-head">
@@ -571,45 +538,155 @@ function ToolFrame({ title, badge, children, result, loading, error, onRun, acti
             </button>
           </div>
         </section>
-        <ResultPanel result={result} loading={loading} error={error} />
+        <ResultPanel toolId={toolId} result={result} loading={loading} error={error} />
       </div>
       <HowItWorks />
     </>
   )
 }
 
-function ResultPanel({ result, loading, error }) {
-  const data = result || defaultResult('brand')
+function ResultPanel({ toolId, result, loading, error }) {
+  if (!result && !loading && !error) return <EmptyResult toolId={toolId} />
+  const data = result || {}
   return (
-    <section className="panel result-panel">
+    <section className={`panel result-panel result-${toolId}`}>
       <div className="result-top">
         <p className="eyeline">Result</p>
-        <strong>{data.title}</strong>
+        <strong>{data.title || 'Analysis result'}</strong>
       </div>
-      <div className="score-ring" style={{ '--score': `${data.score}%` }}>
-        <div className="score-content">
-          <strong>{loading ? '...' : data.score}</strong>
-          <small>Confidence Score</small>
-        </div>
-      </div>
+      {toolId !== 'fanout' && toolId !== 'research' && toolId !== 'landing' && toolId !== 'content' && <ScoreBlock score={data.score} loading={loading} label={toolId === 'check' ? 'Compliance Score' : 'Confidence Score'} />}
       {error ? (
         <p className="result-error">{error}</p>
       ) : (
         <p className="result-summary">{loading ? 'Running live analysis and preparing structured recommendations.' : data.summary}</p>
       )}
-      <div className="metric-row">
-        <Metric label="Sources Checked" value="4" />
-        <Metric label="Entity Signals" value={data.score > 80 ? 'Strong' : 'Medium'} />
-      </div>
-      <ul className="recommendations">
-        {(data.bullets || []).map((item) => <li key={item}><CheckCircle2 size={16} />{item}</li>)}
-      </ul>
+      <ToolSpecificResult toolId={toolId} data={data} />
     </section>
   )
 }
 
+function EmptyResult({ toolId }) {
+  return (
+    <section className="panel result-panel empty-result">
+      <p className="eyeline">Result</p>
+      <strong>No analysis yet</strong>
+      <p>{resultPlaceholders[toolId] || 'Run an analysis to generate results.'}</p>
+    </section>
+  )
+}
+
+function ScoreBlock({ score, loading, label }) {
+  const safeScore = Number.isFinite(Number(score)) ? Number(score) : 0
+  return (
+    <div className="score-ring" style={{ '--score': `${safeScore}%` }}>
+      <div className="score-content">
+        <strong>{loading ? '...' : safeScore}</strong>
+        <small>{label}</small>
+      </div>
+    </div>
+  )
+}
+
+function ToolSpecificResult({ toolId, data }) {
+  const metrics = Array.isArray(data.metrics) && data.metrics.length ? data.metrics : inferredMetrics(toolId, data)
+  const sections = Array.isArray(data.sections) ? data.sections : []
+  const bullets = Array.isArray(data.bullets) ? data.bullets : []
+
+  if (toolId === 'fanout') {
+    const queries = Array.isArray(data.queries) ? data.queries : bullets.map((query) => ({ query, intent: 'Related search path' }))
+    return (
+      <>
+        <MetricGrid metrics={metrics} />
+        <ResultSection title="Generated Query Fan-Out">
+          <div className="query-list">
+            {queries.slice(0, 8).map((item, index) => (
+              <div className="query-row" key={`${item.query || item}-${index}`}>
+                <strong>{item.query || item}</strong>
+                <span>{item.intent || item.reason || 'Related query'}</span>
+              </div>
+            ))}
+          </div>
+        </ResultSection>
+        <ResultSections sections={sections} />
+      </>
+    )
+  }
+
+  if (toolId === 'research') {
+    return (
+      <>
+        <MetricGrid metrics={metrics} />
+        <ResultSections sections={sections.length ? sections : [{ title: 'Prompt Buckets', items: bullets }]} />
+      </>
+    )
+  }
+
+  if (toolId === 'landing') {
+    return (
+      <>
+        <MetricGrid metrics={metrics} />
+        <ResultSections sections={sections.length ? sections : [{ title: 'Recommended Page Blocks', items: bullets }]} />
+      </>
+    )
+  }
+
+  if (toolId === 'content') {
+    return (
+      <>
+        <MetricGrid metrics={metrics} />
+        <ResultSections sections={sections.length ? sections : [{ title: 'Content Outline', items: bullets }]} />
+      </>
+    )
+  }
+
+  if (toolId === 'benchmark') {
+    return (
+      <>
+        <MetricGrid metrics={metrics} />
+        <ul className="recommendations">{bullets.map((item) => <li key={item}><CheckCircle2 size={16} />{item}</li>)}</ul>
+      </>
+    )
+  }
+
+  return (
+    <>
+      <MetricGrid metrics={metrics} />
+      <ResultSections sections={sections} />
+      <ul className="recommendations">{bullets.map((item) => <li key={item}><CheckCircle2 size={16} />{item}</li>)}</ul>
+    </>
+  )
+}
+
+function inferredMetrics(toolId, data) {
+  const score = Number(data.score) || 0
+  if (toolId === 'brand') return [{ label: 'Entity Signals', value: score >= 80 ? 'Strong' : score >= 60 ? 'Medium' : 'Weak' }, { label: 'Market Context', value: data.context || 'Needs review' }]
+  if (toolId === 'check') return [{ label: 'Answerability', value: score >= 80 ? 'High' : 'Needs work' }, { label: 'Fix Priority', value: score >= 75 ? 'Medium' : 'High' }]
+  if (toolId === 'benchmark') return [{ label: 'Brands Ranked', value: '10' }, { label: 'Market Lens', value: 'AI visibility' }]
+  return [{ label: 'Output Depth', value: data.depth || 'Structured' }, { label: 'Next Step', value: 'Review' }]
+}
+
+function MetricGrid({ metrics }) {
+  if (!metrics.length) return null
+  return <div className="metric-row">{metrics.slice(0, 4).map((metric) => <Metric key={metric.label} label={metric.label} value={metric.value} />)}</div>
+}
+
 function Metric({ label, value }) {
   return <div className="metric"><strong>{value}</strong><span>{label}</span></div>
+}
+
+function ResultSection({ title, children }) {
+  return <div className="result-section"><h3>{title}</h3>{children}</div>
+}
+
+function ResultSections({ sections }) {
+  if (!sections.length) return null
+  return sections.slice(0, 4).map((section) => (
+    <ResultSection key={section.title || section.heading} title={section.title || section.heading || 'Details'}>
+      <ul className="recommendations">
+        {(section.items || section.bullets || []).slice(0, 6).map((item) => <li key={item}><CheckCircle2 size={16} />{item}</li>)}
+      </ul>
+    </ResultSection>
+  ))
 }
 
 function HowItWorks() {
@@ -623,7 +700,7 @@ function HowItWorks() {
 
 function useAiTool(toolId, onRunComplete) {
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState(defaultResult(toolId))
+  const [result, setResult] = useState(null)
   const [error, setError] = useState('')
   async function run(input) {
     setLoading(true)
@@ -645,7 +722,7 @@ function BrandEntity({ onRunComplete }) {
   const [form, setForm] = useState({ brand: '', domain: '', country: 'Worldwide', language: 'English' })
   const { loading, result, error, run } = useAiTool('brand', onRunComplete)
   return (
-    <ToolFrame title="Does AI know your brand?" badge="Real-time entity verification" result={result} loading={loading} error={error} onRun={() => run(form)} action="Check AI Authority">
+    <ToolFrame toolId="brand" title="Does AI know your brand?" badge="Real-time entity verification" result={result} loading={loading} error={error} onRun={() => run(form)} action="Check AI Authority">
       <div className="two-col">
         <Field label="Brand name" required><input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder="e.g. Notion, Stripe, Acme" /></Field>
         <Field label="Domain" required><input value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })} placeholder="https://example.com" /></Field>
@@ -659,14 +736,19 @@ function BrandEntity({ onRunComplete }) {
 function CrawlerSimulation({ onRunComplete }) {
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
-  const [rows, setRows] = useState(crawlers.map((name) => ({ name, status: 'Ready', code: '-' })))
+  const [rows, setRows] = useState([])
+  const [error, setError] = useState('')
   async function run() {
     setLoading(true)
+    setError('')
     try {
       const response = await fetch('/api/crawl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ url }) })
       const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Crawler simulation failed.')
       setRows(data.rows)
       await onRunComplete?.()
+    } catch (crawlError) {
+      setError(crawlError.message)
     } finally {
       setLoading(false)
     }
@@ -677,12 +759,41 @@ function CrawlerSimulation({ onRunComplete }) {
       <section className="panel form-panel full">
         <Field label="Website URL" required><input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com" /></Field>
         <div className="crawler-grid">
-          {rows.map((row) => <div className="crawler-row" key={row.name}><CheckCircle2 size={16} /><span>{row.name}</span><strong>{row.status} {row.code !== '-' ? row.code : ''}</strong></div>)}
+          {crawlers.map((name) => {
+            const row = rows.find((item) => item.name === name)
+            return <div className="crawler-row" key={name}><CheckCircle2 size={16} /><span>{name}</span><strong>{row ? `${row.status} ${row.code}` : 'Will test'}</strong></div>
+          })}
         </div>
         <div className="form-footer"><p>Results are saved to your workspace.</p><button className="primary-button" onClick={run} disabled={loading}>{loading ? <Loader2 className="spin" size={17} /> : <Bot size={17} />}Start Crawler Simulation</button></div>
       </section>
+      <CrawlerResultPanel rows={rows} loading={loading} error={error} />
       <HowItWorks />
     </>
+  )
+}
+
+function CrawlerResultPanel({ rows, loading, error }) {
+  if (!rows.length && !loading && !error) {
+    return (
+      <section className="panel result-panel crawler-result">
+        <p className="eyeline">Result</p>
+        <strong>No crawl test yet</strong>
+        <p className="result-summary">Run the simulation to test how your server responds to common AI crawler user-agents. This checks HTTP access behavior; it does not replace a full robots.txt or log-file audit.</p>
+      </section>
+    )
+  }
+  const allowed = rows.filter((row) => row.status === 'Allowed').length
+  const blocked = rows.length - allowed
+  return (
+    <section className="panel result-panel crawler-result">
+      <p className="eyeline">Crawler Access Result</p>
+      <strong>{allowed} of {rows.length} AI crawlers can access the URL</strong>
+      {error ? <p className="result-error">{error}</p> : <p className="result-summary">{loading ? 'Testing crawler user-agents...' : blocked ? 'Some AI crawlers could not access the URL. Review bot protection, firewall rules, CDN settings, and robots policies.' : 'The tested AI crawler user-agents received successful HTTP responses.'}</p>}
+      <MetricGrid metrics={[{ label: 'Allowed', value: allowed }, { label: 'Blocked / Error', value: blocked }]} />
+      <div className="crawler-result-list">
+        {rows.map((row) => <div className={row.status === 'Allowed' ? 'crawler-status allowed' : 'crawler-status blocked'} key={row.name}><span>{row.name}</span><strong>{row.status} {row.code}</strong></div>)}
+      </div>
+    </section>
   )
 }
 
@@ -695,9 +806,9 @@ function FanOut({ onRunComplete }) {
   const [query, setQuery] = useState('')
   const { loading, result, error, run } = useAiTool('fanout', onRunComplete)
   return (
-    <ToolFrame title="Run Fan-Out Analysis" badge="All engines" result={result} loading={loading} error={error} onRun={() => run({ mode, query })} action="Start Fan-Out Analysis">
+    <ToolFrame toolId="fanout" title="Run Fan-Out Analysis" badge="All engines" result={result} loading={loading} error={error} onRun={() => run({ mode, query })} action="Start Fan-Out Analysis">
       <ModeSwitch value={mode} onChange={setMode} />
-      <Field label="Your query or search prompt" required><input value={query} onChange={(e) => setQuery(e.target.value)} /></Field>
+      <Field label={fanoutModeHelp[mode]} required><input value={query} onChange={(e) => setQuery(e.target.value)} /></Field>
       <div className="check-list">{['Google AI Overview', 'Google AI Mode', 'ChatGPT'].map((x) => <label key={x}><input type="checkbox" defaultChecked />{x}</label>)}</div>
     </ToolFrame>
   )
@@ -709,7 +820,7 @@ function PromptResearch({ onRunComplete }) {
   const { loading, result, error, run } = useAiTool('research', onRunComplete)
   const steps = ['Brand & Domain', 'Brand Description', 'Competitors', 'Topics', 'Personas', 'Search Console', 'SEO Keywords', 'Email']
   return (
-    <ToolFrame title="Advanced Prompt Research" badge="Looking for a holistic list of prompts" result={result} loading={loading} error={error} onRun={() => run({ step, ...form })} action="Start AI Prompt Research">
+    <ToolFrame toolId="research" title="Advanced Prompt Research" badge="Looking for a holistic list of prompts" result={result} loading={loading} error={error} onRun={() => run({ step, ...form })} action="Start AI Prompt Research">
       <ModeSwitch value="Advanced" onChange={() => {}} />
       <div className="steps">{steps.map((s, index) => <button key={s} className={step === index + 1 ? 'active' : ''} onClick={() => setStep(index + 1)}><strong>{index + 1}</strong><span>{s}</span></button>)}</div>
       <p className="info-box">Generate a comprehensive list of search prompts to monitor your brand visibility in AI search engines.</p>
@@ -727,7 +838,7 @@ function LandingCreator({ onRunComplete }) {
   const [form, setForm] = useState({ question: '', brand: '', domain: '', differentiators: '', competitors: '', data: '', context: '', instructions: '', language: 'English' })
   const { loading, result, error, run } = useAiTool('landing', onRunComplete)
   return (
-    <ToolFrame title="Create GEO Optimized Landing Page" badge="AI search optimized" result={result} loading={loading} error={error} onRun={() => run(form)} action="Start Creating Landing Page">
+    <ToolFrame toolId="landing" title="Create GEO Optimized Landing Page" badge="AI search optimized" result={result} loading={loading} error={error} onRun={() => run(form)} action="Start Creating Landing Page">
       <Field label="Main question for your landing page" required><input value={form.question} onChange={(e) => setForm({ ...form, question: e.target.value })} placeholder="What is your main question?" /></Field>
       <div className="two-col">
         <Field label="Your brand" required><input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} /></Field>
@@ -751,7 +862,7 @@ function ContentCreator({ onRunComplete }) {
   const [form, setForm] = useState({ prompt: '', urls: '', language: 'English', length: 'Short (500 words)', brand: '', domain: '', instructions: '' })
   const { loading, result, error, run } = useAiTool('content', onRunComplete)
   return (
-    <ToolFrame title="Create GEO Optimized Content" badge="AI engines & prompts" result={result} loading={loading} error={error} onRun={() => run({ briefOnly, type, ...form })} action="Start Creating Content">
+    <ToolFrame toolId="content" title="Create GEO Optimized Content" badge="AI engines & prompts" result={result} loading={loading} error={error} onRun={() => run({ briefOnly, type, ...form })} action="Start Creating Content">
       <label className="checkbox-line"><input type="checkbox" checked={briefOnly} onChange={(e) => setBriefOnly(e.target.checked)} /> I would like to receive a content brief instead of the full content</label>
       <Field label="Prompt with no or low visibility" required><input value={form.prompt} onChange={(e) => setForm({ ...form, prompt: e.target.value })} placeholder="What is your main question?" /></Field>
       <Field label="Add up to 3 relevant URLs"><textarea value={form.urls} onChange={(e) => setForm({ ...form, urls: e.target.value })} placeholder="https://domain.com/path/file.html" /></Field>
@@ -772,7 +883,7 @@ function ContentCheck({ onRunComplete }) {
   const [form, setForm] = useState({ url: '', content: '', language: 'English' })
   const { loading, result, error, run } = useAiTool('check', onRunComplete)
   return (
-    <ToolFrame title="Check your content for GEO compliance" badge="AI search optimized" result={result} loading={loading} error={error} onRun={() => run(form)} action="Start Content Check">
+    <ToolFrame toolId="check" title="Check your content for GEO compliance" badge="AI search optimized" result={result} loading={loading} error={error} onRun={() => run(form)} action="Start Content Check">
       <Field label="URL of your content"><input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://domain.com/path/page.html" /></Field>
       <div className="or-line"><span>OR</span></div>
       <Field label="Paste your content directly"><textarea className="large" value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="Paste the content you want to analyze here..." /></Field>
@@ -785,17 +896,10 @@ function Benchmark({ onRunComplete }) {
   const [form, setForm] = useState({ prompt: '', country: 'Worldwide', language: 'English', industry: '' })
   const [loading, setLoading] = useState(false)
   const [rows, setRows] = useState([])
-  const [result, setResult] = useState(defaultResult('benchmark'))
+  const [result, setResult] = useState(null)
   const [error, setError] = useState('')
   const tableRows = useMemo(() => {
-    const source = rows.length ? rows : benchmarkBrands.map((brand, i) => ({
-    rank: i + 1,
-    brand,
-    share: `${Math.max(92 - i * 6, 38)}%`,
-    sentiment: i < 3 ? 'Leader' : i < 7 ? 'Challenger' : 'Emerging',
-    reason: ['Entity strength', 'Citation footprint', 'Topical authority', 'Answer consistency'][i % 4],
-  }))
-    return source.map((row, index) => ({
+    return rows.map((row, index) => ({
       rank: row.rank || index + 1,
       brand: row.brand || `Brand ${index + 1}`,
       share: typeof row.share === 'number' ? `${row.share}%` : row.share,
@@ -819,7 +923,7 @@ function Benchmark({ onRunComplete }) {
   }
   return (
     <>
-      <ToolFrame title="Benchmark AI visibility" badge="Top 10 brands by prompt, country, and language" result={result} loading={loading} error={error} onRun={run} action="Run Benchmark">
+      <ToolFrame toolId="benchmark" title="Benchmark AI visibility" badge="Top 10 brands by prompt, country, and language" result={result} loading={loading} error={error} onRun={run} action="Run Benchmark">
         <Field label="Search prompt" required><input value={form.prompt} onChange={(e) => setForm({ ...form, prompt: e.target.value })} placeholder="Best CRM software for mid-market teams" /></Field>
         <div className="three-col">
           <Field label="Country"><SelectField value={form.country} onChange={(country) => setForm({ ...form, country })} options={countries} /></Field>
@@ -827,15 +931,17 @@ function Benchmark({ onRunComplete }) {
           <Field label="Industry filter"><input value={form.industry} onChange={(e) => setForm({ ...form, industry: e.target.value })} placeholder="SaaS, finance, travel..." /></Field>
         </div>
       </ToolFrame>
-      <section className="panel table-panel">
-        <div className="table-head"><strong>Top 10 brands</strong><span>{form.country} / {form.language}</span></div>
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Rank</th><th>Brand</th><th>Visibility</th><th>Status</th><th>Primary driver</th></tr></thead>
-            <tbody>{tableRows.map((row) => <tr key={row.rank}><td>{row.rank}</td><td>{row.brand}</td><td>{row.share}</td><td><span className="status-pill">{row.sentiment}</span></td><td>{row.reason}</td></tr>)}</tbody>
-          </table>
-        </div>
-      </section>
+      {tableRows.length > 0 && (
+        <section className="panel table-panel">
+          <div className="table-head"><strong>Top 10 brands</strong><span>{form.country} / {form.language}</span></div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Rank</th><th>Brand</th><th>Visibility</th><th>Status</th><th>Primary driver</th></tr></thead>
+              <tbody>{tableRows.map((row) => <tr key={row.rank}><td>{row.rank}</td><td>{row.brand}</td><td>{row.share}</td><td><span className="status-pill">{row.sentiment}</span></td><td>{row.reason}</td></tr>)}</tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </>
   )
 }

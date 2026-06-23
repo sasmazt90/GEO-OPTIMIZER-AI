@@ -61,14 +61,22 @@ app.use('/api/auth/', rateLimit({
 }))
 
 const toolInstructions = {
-  brand: 'Analyze whether AI systems can identify this brand as an entity. Return entity confidence and recommendations.',
-  fanout: 'Create a query fan-out analysis for Google AI Overview, Google AI Mode, and ChatGPT style answer engines.',
-  research: 'Generate a structured AI prompt research plan across branded, non-branded, competitor, topic, persona, SEO, and Search Console prompts.',
-  landing: 'Create a GEO optimized landing page plan with answer-first structure, proof sections, FAQs, and schema recommendations.',
-  content: 'Create or brief GEO optimized content that is extractable by AI answer engines.',
-  check: 'Review content for GEO compliance and provide practical fixes.',
-  benchmark: 'Return the top 10 brands likely to appear for the user prompt in the selected country and language.',
+  brand: 'Analyze whether AI systems can identify this brand as an entity for the selected country and language. Evaluate entity clarity, third-party corroboration, sameAs/schema readiness, category ownership, answer-engine citation likelihood, and concrete fixes.',
+  fanout: 'Create a query fan-out analysis for Google AI Overview, Google AI Mode, and ChatGPT style answer engines. Expand the source prompt into realistic sub-queries grouped by intent, comparison, alternatives, pricing, trust, and implementation.',
+  research: 'Generate a structured AI prompt research plan across branded, non-branded, competitor, topic, persona, SEO, and Search Console prompt types. Include monitorable prompt buckets and why each matters.',
+  landing: 'Create a GEO optimized landing page plan with answer-first structure, proof sections, FAQs, comparison context, schema recommendations, and extractable answer blocks.',
+  content: 'Create or brief GEO optimized content that is extractable by AI answer engines. Include outline, answer snippets, evidence needs, FAQ angles, and structure recommendations.',
+  check: 'Review content for GEO compliance. Score answerability, entity clarity, evidence, structure, schema, freshness, and extraction quality. Provide prioritized fixes.',
+  benchmark: 'Return the top 10 brands likely to appear for the user prompt in the selected country and language, ranked by likely AI answer visibility, topical authority, citation footprint, and sentiment.',
 }
+
+const resultShape = `Return strict JSON with:
+title string, score number 0-100, summary string,
+metrics array of 2-4 objects {label,value},
+bullets array of concise recommendations,
+sections array of objects {title,items} where items is an array of strings.
+For fanout also include queries array of 6-10 objects {query,intent}.
+For benchmark also include brands array of exactly 10 objects {rank,brand,share,sentiment,reason}.`
 
 const authSchema = z.object({
   name: z.string().trim().min(2).max(80).optional(),
@@ -208,40 +216,17 @@ async function listRuns(userId) {
   }))
 }
 
-function fallback(tool) {
-  const title = {
-    brand: 'Brand entity snapshot',
-    fanout: 'Fan-out map',
-    research: 'Prompt research set',
-    landing: 'Landing page outline',
-    content: 'Generated content brief',
-    check: 'GEO compliance review',
-    benchmark: 'Benchmark ranking',
-  }[tool] || 'GEO analysis'
-
+function fallback() {
   return {
-    title,
-    score: tool === 'check' ? 73 : 86,
-    summary: 'Demo analysis generated locally because the live provider was unavailable. Configure the API keys in .env for live AI output.',
-    bullets: [
-      'Use clear entity facts and consistent brand wording',
-      'Add concise answer blocks that AI systems can quote',
-      'Include evidence, comparison context, and FAQ coverage',
-      'Refresh prompts by country and language on a schedule',
-    ],
-    brands: makeBenchmarkRows(),
+    title: 'Analysis result',
+    score: 0,
+    summary: '',
+    metrics: [],
+    bullets: [],
+    sections: [],
+    queries: [],
+    brands: [],
   }
-}
-
-function makeBenchmarkRows() {
-  const brands = ['HubSpot', 'Semrush', 'Ahrefs', 'Shopify', 'Notion', 'Salesforce', 'Adobe', 'Canva', 'Zapier', 'Monday.com']
-  return brands.map((brand, index) => ({
-    rank: index + 1,
-    brand,
-    share: `${Math.max(92 - index * 6, 38)}%`,
-    sentiment: index < 3 ? 'Leader' : index < 7 ? 'Challenger' : 'Emerging',
-    reason: ['Entity strength', 'Citation footprint', 'Topical authority', 'Answer consistency'][index % 4],
-  }))
 }
 
 async function callOpenAI(tool, input) {
@@ -261,7 +246,7 @@ async function callOpenAI(tool, input) {
         {
           role: 'system',
           content: `You are GEO OPTIMIZER AI. ${toolInstructions[tool] || toolInstructions.brand}
-Return strict JSON with keys: title, score, summary, bullets. Score is 0-100. Bullets is an array of 4 concise recommendations. If tool is benchmark, also include brands array of exactly 10 objects with rank, brand, share, sentiment, reason.`,
+${resultShape}`,
         },
         { role: 'user', content: JSON.stringify(input) },
       ],
@@ -288,7 +273,7 @@ async function callOpenRouter(tool, input) {
       temperature: 0.3,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: `You are GEO OPTIMIZER AI. ${toolInstructions[tool] || toolInstructions.brand} Return strict JSON with title, score, summary, bullets, and brands for benchmark.` },
+        { role: 'system', content: `You are GEO OPTIMIZER AI. ${toolInstructions[tool] || toolInstructions.brand} ${resultShape}` },
         { role: 'user', content: JSON.stringify(input) },
       ],
     }),
@@ -302,14 +287,41 @@ function normalizeResult(tool, result) {
   const merged = { ...fallback(tool), ...result }
   const rawScore = Number(merged.score) || 0
   merged.score = Math.max(0, Math.min(100, rawScore > 0 && rawScore <= 1 ? Math.round(rawScore * 100) : Math.round(rawScore)))
-  merged.bullets = Array.isArray(merged.bullets) ? merged.bullets.slice(0, 6).map(String) : fallback(tool).bullets
+  merged.bullets = Array.isArray(merged.bullets) ? merged.bullets.slice(0, 8).map(String) : []
+  merged.metrics = normalizeMetrics(merged.metrics)
+  merged.sections = normalizeSections(merged.sections)
+  merged.queries = normalizeQueries(merged.queries)
   if (tool === 'benchmark') merged.brands = normalizeBrands(merged.brands)
   return merged
 }
 
+function normalizeMetrics(metrics) {
+  if (!Array.isArray(metrics)) return []
+  return metrics.slice(0, 4).map((metric) => ({
+    label: String(metric?.label || 'Metric'),
+    value: String(metric?.value || '-'),
+  }))
+}
+
+function normalizeSections(sections) {
+  if (!Array.isArray(sections)) return []
+  return sections.slice(0, 5).map((section, index) => ({
+    title: String(section?.title || section?.heading || `Section ${index + 1}`),
+    items: Array.isArray(section?.items || section?.bullets) ? (section.items || section.bullets).slice(0, 8).map(String) : [],
+  })).filter((section) => section.items.length)
+}
+
+function normalizeQueries(queries) {
+  if (!Array.isArray(queries)) return []
+  return queries.slice(0, 10).map((query) => ({
+    query: String(query?.query || query),
+    intent: String(query?.intent || query?.reason || 'Related search path'),
+  }))
+}
+
 function normalizeBrands(brands) {
-  const rows = Array.isArray(brands) && brands.length ? brands : makeBenchmarkRows()
-  return rows.slice(0, 10).map((row, index) => ({
+  if (!Array.isArray(brands)) return []
+  return brands.slice(0, 10).map((row, index) => ({
     rank: Number(row.rank) || index + 1,
     brand: String(row.brand || `Brand ${index + 1}`),
     share: typeof row.share === 'number' ? `${row.share}%` : String(row.share || `${90 - index * 5}%`),
