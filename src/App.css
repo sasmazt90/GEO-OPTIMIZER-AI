@@ -374,6 +374,14 @@ th { color: #667085; text-transform: uppercase; letter-spacing: 1.1px; font-size
   border-radius: 7px;
   font-size: 13px;
 }
+.auth-success {
+  padding: 10px 12px;
+  color: #047857 !important;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 7px;
+  font-size: 13px;
+}
 .text-button {
   width: 100%;
   min-height: 40px;
@@ -382,6 +390,10 @@ th { color: #667085; text-transform: uppercase; letter-spacing: 1.1px; font-size
   background: transparent;
   border: 0;
   font-weight: 800;
+}
+.text-button.secondary {
+  margin-top: 2px;
+  color: #667085;
 }
 .mobile-only { display: none; }
 .mobile-drawer { position: fixed; inset: 0; z-index: 40; background: rgba(6, 21, 47, 0.34); }

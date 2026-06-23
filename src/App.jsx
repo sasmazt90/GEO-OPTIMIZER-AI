@@ -103,6 +103,7 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true)
   const [user, setUser] = useState(null)
   const [runs, setRuns] = useState([])
+  const [recoveryToken, setRecoveryToken] = useState('')
   const active = tools.find((tool) => tool.id === activeTool)
 
   async function loadRuns() {
@@ -116,6 +117,30 @@ function App() {
   useEffect(() => {
     async function loadSession() {
       try {
+        const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+        const type = hash.get('type')
+        const accessToken = hash.get('access_token')
+        const refreshToken = hash.get('refresh_token')
+        if (type === 'recovery' && accessToken) {
+          setRecoveryToken(accessToken)
+          window.history.replaceState({}, document.title, '/auth/callback')
+          return
+        }
+        if (accessToken) {
+          const callbackResponse = await fetch('/api/auth/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ accessToken, refreshToken }),
+          })
+          if (callbackResponse.ok) {
+            const data = await callbackResponse.json()
+            setUser(data.user)
+            await loadRuns()
+            window.history.replaceState({}, document.title, '/')
+            return
+          }
+        }
         const response = await fetch('/api/auth/me', { credentials: 'include' })
         if (response.ok) {
           const data = await response.json()
@@ -136,6 +161,7 @@ function App() {
   }
 
   if (authLoading) return <LoadingScreen />
+  if (recoveryToken) return <AuthScreen recoveryToken={recoveryToken} onPasswordUpdated={() => setRecoveryToken('')} />
   if (!user) return <AuthScreen onAuthed={(nextUser) => { setUser(nextUser); loadRuns() }} />
 
   return (
@@ -225,9 +251,10 @@ function LoadingScreen() {
   return <div className="auth-shell"><div className="auth-card compact"><Loader2 className="spin" size={22} /><strong>Loading GEO OPTIMIZER AI</strong></div></div>
 }
 
-function AuthScreen({ onAuthed }) {
-  const [mode, setMode] = useState('login')
+function AuthScreen({ onAuthed, recoveryToken, onPasswordUpdated }) {
+  const [mode, setMode] = useState(recoveryToken ? 'reset' : 'login')
   const [form, setForm] = useState({ name: '', email: '', password: '' })
+  const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -235,22 +262,72 @@ function AuthScreen({ onAuthed }) {
     event.preventDefault()
     setLoading(true)
     setError('')
+    setMessage('')
     try {
-      const response = await fetch(`/api/auth/${mode === 'login' ? 'login' : 'register'}`, {
+      let endpoint = '/api/auth/login'
+      let body = form
+      if (mode === 'register') endpoint = '/api/auth/register'
+      if (mode === 'forgot') {
+        endpoint = '/api/auth/reset-password'
+        body = { email: form.email }
+      }
+      if (mode === 'reset') {
+        endpoint = '/api/auth/update-password'
+        body = { accessToken: recoveryToken, password: form.password }
+      }
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(form),
+        body: JSON.stringify(body),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'Authentication failed')
-      onAuthed(data.user)
+      if (data.pendingConfirmation || mode === 'forgot') {
+        setMessage(data.message || 'Check your email for the next step.')
+        return
+      }
+      if (mode === 'reset') {
+        setMessage(data.message || 'Password updated. Please sign in again.')
+        setMode('login')
+        onPasswordUpdated?.()
+        return
+      }
+      onAuthed?.(data.user)
     } catch (authError) {
       setError(authError.message)
     } finally {
       setLoading(false)
     }
   }
+
+  async function resendConfirmation() {
+    setLoading(true)
+    setError('')
+    setMessage('')
+    try {
+      const response = await fetch('/api/auth/resend-confirmation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email: form.email }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Could not resend confirmation email')
+      setMessage(data.message || 'Confirmation email sent.')
+    } catch (authError) {
+      setError(authError.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const title = {
+    login: 'Sign in to your workspace',
+    register: 'Create your account',
+    forgot: 'Reset your password',
+    reset: 'Choose a new password',
+  }[mode]
 
   return (
     <main className="auth-shell">
@@ -259,18 +336,21 @@ function AuthScreen({ onAuthed }) {
           <span className="brand-icon"><Sparkles size={19} /></span>
           <div><strong>GEO OPTIMIZER AI</strong><small>Production workspace</small></div>
         </div>
-        <h1>{mode === 'login' ? 'Sign in to your workspace' : 'Create your account'}</h1>
-        <p>Run GEO and LLMO workflows with saved history, protected API access, and account-level sessions.</p>
+        <h1>{title}</h1>
+        <p>{mode === 'forgot' || mode === 'reset' ? 'Use Supabase Auth email recovery to securely regain access.' : 'Run GEO and LLMO workflows with saved history, protected API access, and account-level sessions.'}</p>
         <form onSubmit={submit}>
           {mode === 'register' && <Field label="Name"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Your name" /></Field>}
-          <Field label="Email" required><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="you@company.com" /></Field>
-          <Field label="Password" required><input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="At least 8 characters" /></Field>
+          {mode !== 'reset' && <Field label="Email" required><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="you@company.com" /></Field>}
+          {mode !== 'forgot' && <Field label={mode === 'reset' ? 'New password' : 'Password'} required><input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="At least 8 characters" /></Field>}
           {error && <p className="auth-error">{error}</p>}
-          <button className="primary-button" disabled={loading}>{loading ? <Loader2 className="spin" size={17} /> : <ShieldCheck size={17} />}{mode === 'login' ? 'Sign In' : 'Create Account'}</button>
+          {message && <p className="auth-success">{message}</p>}
+          <button className="primary-button" disabled={loading}>{loading ? <Loader2 className="spin" size={17} /> : <ShieldCheck size={17} />}{mode === 'login' ? 'Sign In' : mode === 'register' ? 'Create Account' : mode === 'forgot' ? 'Send Reset Email' : 'Update Password'}</button>
         </form>
-        <button className="text-button" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>
-          {mode === 'login' ? 'Create a new account' : 'I already have an account'}
-        </button>
+        {mode === 'login' && <button className="text-button" onClick={() => setMode('register')}>Create a new account</button>}
+        {mode === 'login' && <button className="text-button secondary" onClick={() => setMode('forgot')}>Forgot password?</button>}
+        {mode === 'register' && <button className="text-button" onClick={() => setMode('login')}>I already have an account</button>}
+        {mode === 'register' && <button className="text-button secondary" disabled={!form.email || loading} onClick={resendConfirmation}>Resend confirmation email</button>}
+        {(mode === 'forgot' || mode === 'reset') && <button className="text-button" onClick={() => { setMode('login'); onPasswordUpdated?.() }}>Back to sign in</button>}
       </section>
     </main>
   )

@@ -1,14 +1,11 @@
-import bcrypt from 'bcryptjs'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import 'dotenv/config'
 import express from 'express'
 import rateLimit from 'express-rate-limit'
-import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import helmet from 'helmet'
-import jwt from 'jsonwebtoken'
 import { nanoid } from 'nanoid'
 import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
@@ -19,17 +16,26 @@ const app = express()
 const port = process.env.PORT || 8787
 const isProduction = process.env.NODE_ENV === 'production'
 const envValue = (key, fallback = '') => (process.env[key] || fallback).trim()
-const jwtSecret = envValue('JWT_SECRET', 'dev-only-change-me')
-const dbPath = path.join(__dirname, 'data', 'db.json')
 const supabaseUrl = envValue('SUPABASE_URL')
 const supabaseSecretKey = envValue('SUPABASE_SECRET_KEY')
+const supabasePublishableKey = envValue('SUPABASE_PUBLISHABLE_KEY')
 const appUrl = envValue('APP_URL', 'http://localhost:5173')
-const supabase = supabaseUrl && supabaseSecretKey
+const requireSupabase = envValue('REQUIRE_SUPABASE', 'true') !== 'false'
+
+const supabaseAdmin = supabaseUrl && supabaseSecretKey
   ? createClient(supabaseUrl, supabaseSecretKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
   : null
-const requireSupabase = envValue('REQUIRE_SUPABASE', 'true') !== 'false'
+const supabaseAuth = supabaseUrl && (supabasePublishableKey || supabaseSecretKey)
+  ? createClient(supabaseUrl, supabasePublishableKey || supabaseSecretKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+  : null
+
+if (requireSupabase && (!supabaseAdmin || !supabaseAuth)) {
+  throw new Error('Supabase Auth requires SUPABASE_URL, SUPABASE_SECRET_KEY, and SUPABASE_PUBLISHABLE_KEY')
+}
 
 app.set('trust proxy', 1)
 app.use(helmet({
@@ -69,6 +75,17 @@ const authSchema = z.object({
   email: z.string().trim().email().max(160),
   password: z.string().min(8).max(120),
 })
+const emailSchema = z.object({
+  email: z.string().trim().email().max(160),
+})
+const sessionSchema = z.object({
+  accessToken: z.string().min(20),
+  refreshToken: z.string().min(20).optional(),
+})
+const passwordUpdateSchema = z.object({
+  accessToken: z.string().min(20),
+  password: z.string().min(8).max(120),
+})
 const generateSchema = z.object({
   tool: z.enum(['brand', 'fanout', 'research', 'landing', 'content', 'check', 'benchmark']).default('brand'),
   input: z.record(z.string(), z.unknown()).default({}),
@@ -77,131 +94,115 @@ const crawlSchema = z.object({
   url: z.string().trim().min(3).max(500),
 })
 
-async function readDb() {
-  try {
-    return JSON.parse(await fs.readFile(dbPath, 'utf8'))
-  } catch {
-    const seed = { users: [], runs: [] }
-    await writeDb(seed)
-    return seed
-  }
-}
-
-async function writeDb(db) {
-  await fs.mkdir(path.dirname(dbPath), { recursive: true })
-  await fs.writeFile(dbPath, JSON.stringify(db, null, 2))
-}
-
-function publicUser(user) {
+function cookieOptions(maxAge) {
   return {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    createdAt: user.createdAt || user.created_at,
-  }
-}
-
-function signSession(user) {
-  return jwt.sign({ sub: user.id, email: user.email }, jwtSecret, { expiresIn: '7d' })
-}
-
-function setSessionCookie(res, token) {
-  res.cookie('geo_session', token, {
     httpOnly: true,
     sameSite: 'lax',
     secure: isProduction,
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+    maxAge,
     path: '/',
-  })
+  }
+}
+
+function setAuthCookies(res, session) {
+  if (!session?.access_token) return
+  res.cookie('sb_access_token', session.access_token, cookieOptions(60 * 60 * 1000))
+  if (session.refresh_token) {
+    res.cookie('sb_refresh_token', session.refresh_token, cookieOptions(30 * 24 * 60 * 60 * 1000))
+  }
+}
+
+function clearAuthCookies(res) {
+  res.clearCookie('sb_access_token', { path: '/' })
+  res.clearCookie('sb_refresh_token', { path: '/' })
+  res.clearCookie('geo_session', { path: '/' })
+}
+
+function profileName(user, profile) {
+  return profile?.name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User'
+}
+
+function publicUser(user, profile) {
+  return {
+    id: user.id,
+    name: profileName(user, profile),
+    email: user.email,
+    createdAt: user.created_at,
+  }
+}
+
+async function getProfile(userId) {
+  const { data, error } = await supabaseAdmin
+    .from('geo_app_users')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle()
+  if (error) throw error
+  return data
+}
+
+async function upsertProfile(user, name) {
+  const profile = {
+    id: user.id,
+    name: name || profileName(user),
+    email: user.email,
+    password_hash: 'supabase-auth',
+  }
+  const { data, error } = await supabaseAdmin
+    .from('geo_app_users')
+    .upsert(profile, { onConflict: 'id' })
+    .select('*')
+    .single()
+  if (error) throw error
+  return data
+}
+
+async function getUserFromRequest(req, res) {
+  let accessToken = req.cookies.sb_access_token
+  const refreshToken = req.cookies.sb_refresh_token
+  if (!accessToken && !refreshToken) return null
+
+  if (accessToken) {
+    const { data, error } = await supabaseAuth.auth.getUser(accessToken)
+    if (!error && data.user) return data.user
+  }
+
+  if (!refreshToken) return null
+  const { data, error } = await supabaseAuth.auth.refreshSession({ refresh_token: refreshToken })
+  if (error || !data.session?.access_token || !data.user) return null
+  setAuthCookies(res, data.session)
+  return data.user
 }
 
 async function requireAuth(req, res, next) {
   try {
-    const token = req.cookies.geo_session
-    if (!token) return res.status(401).json({ error: 'Authentication required' })
-    const payload = jwt.verify(token, jwtSecret)
-    const user = await findUserById(payload.sub)
-    if (!user) return res.status(401).json({ error: 'Invalid session' })
+    const user = await getUserFromRequest(req, res)
+    if (!user) return res.status(401).json({ error: 'Authentication required' })
+    const profile = await upsertProfile(user)
     req.user = user
+    req.profile = profile
     next()
   } catch {
     res.status(401).json({ error: 'Invalid session' })
   }
 }
 
-async function findUserByEmail(email) {
-  if (supabase) {
-    const { data, error } = await supabase
-      .from('geo_app_users')
-      .select('*')
-      .eq('email', email)
-      .maybeSingle()
-    if (error) throw error
-    return data
-  }
-  if (requireSupabase) throw new Error('Supabase is required but not configured')
-  const db = await readDb()
-  return db.users.find((user) => user.email === email)
-}
-
-async function findUserById(id) {
-  if (supabase) {
-    const { data, error } = await supabase
-      .from('geo_app_users')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle()
-    if (error) throw error
-    return data
-  }
-  if (requireSupabase) throw new Error('Supabase is required but not configured')
-  const db = await readDb()
-  return db.users.find((user) => user.id === id)
-}
-
-async function createUserRecord(user) {
-  if (supabase) {
-    const { data, error } = await supabase
-      .from('geo_app_users')
-      .insert({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        password_hash: user.passwordHash,
-      })
-      .select('*')
-      .single()
-    if (error) throw error
-    return data
-  }
-  if (requireSupabase) throw new Error('Supabase is required but not configured')
-  const db = await readDb()
-  db.users.push(user)
-  await writeDb(db)
-  return user
-}
-
 async function listRuns(userId) {
-  if (supabase) {
-    const { data, error } = await supabase
-      .from('geo_app_runs')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(30)
-    if (error) throw error
-    return data.map((run) => ({
-      id: run.id,
-      userId: run.user_id,
-      type: run.type,
-      payload: run.payload,
-      result: run.result,
-      createdAt: run.created_at,
-    }))
-  }
-  if (requireSupabase) throw new Error('Supabase is required but not configured')
-  const db = await readDb()
-  return db.runs.filter((run) => run.userId === userId).slice(0, 30)
+  const { data, error } = await supabaseAdmin
+    .from('geo_app_runs')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(30)
+  if (error) throw error
+  return data.map((run) => ({
+    id: run.id,
+    userId: run.user_id,
+    type: run.type,
+    payload: run.payload,
+    result: run.result,
+    createdAt: run.created_at,
+  }))
 }
 
 function fallback(tool) {
@@ -315,73 +316,116 @@ function normalizeBrands(brands) {
 }
 
 async function saveRun(userId, type, payload, result) {
-  if (supabase) {
-    const { error } = await supabase
-      .from('geo_app_runs')
-      .insert({
-        id: nanoid(),
-        user_id: userId,
-        type,
-        payload,
-        result,
-      })
-    if (error) throw error
-    return
-  }
-  if (requireSupabase) throw new Error('Supabase is required but not configured')
-  const db = await readDb()
-  db.runs.unshift({
-    id: nanoid(),
-    userId,
-    type,
-    payload,
-    result,
-    createdAt: new Date().toISOString(),
-  })
-  db.runs = db.runs.slice(0, 1000)
-  await writeDb(db)
+  const { error } = await supabaseAdmin
+    .from('geo_app_runs')
+    .insert({
+      id: nanoid(),
+      user_id: userId,
+      type,
+      payload,
+      result,
+    })
+  if (error) throw error
 }
 
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, service: 'GEO OPTIMIZER AI', database: supabase ? 'supabase' : 'json', time: new Date().toISOString() })
+  res.json({ ok: true, service: 'GEO OPTIMIZER AI', auth: 'supabase', database: supabaseAdmin ? 'supabase' : 'unconfigured', time: new Date().toISOString() })
 })
 
 app.post('/api/auth/register', async (req, res) => {
   const parsed = authSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'Invalid registration details' })
   const email = parsed.data.email.toLowerCase()
-  if (await findUserByEmail(email)) return res.status(409).json({ error: 'Email already registered' })
-  const user = {
-    id: nanoid(),
-    name: parsed.data.name || email.split('@')[0],
+  const { data, error } = await supabaseAuth.auth.signUp({
     email,
-    passwordHash: await bcrypt.hash(parsed.data.password, 12),
-    createdAt: new Date().toISOString(),
+    password: parsed.data.password,
+    options: {
+      data: { name: parsed.data.name || email.split('@')[0] },
+      emailRedirectTo: `${appUrl}/auth/callback`,
+    },
+  })
+  if (error) return res.status(400).json({ error: error.message })
+  if (data.user) await upsertProfile(data.user, parsed.data.name)
+  if (data.session) {
+    setAuthCookies(res, data.session)
+    return res.status(201).json({ user: publicUser(data.user, await getProfile(data.user.id)) })
   }
-  const createdUser = await createUserRecord(user)
-  setSessionCookie(res, signSession(createdUser))
-  res.status(201).json({ user: publicUser(createdUser) })
+  res.status(201).json({
+    pendingConfirmation: true,
+    message: 'Check your email to confirm your account before signing in.',
+  })
 })
 
 app.post('/api/auth/login', async (req, res) => {
   const parsed = authSchema.omit({ name: true }).safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'Invalid login details' })
-  const user = await findUserByEmail(parsed.data.email.toLowerCase())
-  const passwordHash = user?.passwordHash || user?.password_hash
-  if (!user || !(await bcrypt.compare(parsed.data.password, passwordHash))) {
-    return res.status(401).json({ error: 'Invalid email or password' })
+  const { data, error } = await supabaseAuth.auth.signInWithPassword({
+    email: parsed.data.email.toLowerCase(),
+    password: parsed.data.password,
+  })
+  if (error || !data.session || !data.user) {
+    return res.status(401).json({ error: error?.message || 'Invalid email or password' })
   }
-  setSessionCookie(res, signSession(user))
-  res.json({ user: publicUser(user) })
+  const profile = await upsertProfile(data.user)
+  setAuthCookies(res, data.session)
+  res.json({ user: publicUser(data.user, profile) })
+})
+
+app.post('/api/auth/session', async (req, res) => {
+  const parsed = sessionSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid session payload' })
+  const { data, error } = await supabaseAuth.auth.getUser(parsed.data.accessToken)
+  if (error || !data.user) return res.status(401).json({ error: 'Invalid auth callback' })
+  const profile = await upsertProfile(data.user)
+  setAuthCookies(res, {
+    access_token: parsed.data.accessToken,
+    refresh_token: parsed.data.refreshToken,
+  })
+  res.json({ user: publicUser(data.user, profile) })
+})
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  const parsed = emailSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid email' })
+  const { error } = await supabaseAuth.auth.resetPasswordForEmail(parsed.data.email.toLowerCase(), {
+    redirectTo: `${appUrl}/auth/callback`,
+  })
+  if (error) return res.status(400).json({ error: error.message })
+  res.json({ ok: true, message: 'Password reset email sent.' })
+})
+
+app.post('/api/auth/resend-confirmation', async (req, res) => {
+  const parsed = emailSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid email' })
+  const { error } = await supabaseAuth.auth.resend({
+    type: 'signup',
+    email: parsed.data.email.toLowerCase(),
+    options: { emailRedirectTo: `${appUrl}/auth/callback` },
+  })
+  if (error) return res.status(400).json({ error: error.message })
+  res.json({ ok: true, message: 'Confirmation email sent.' })
+})
+
+app.post('/api/auth/update-password', async (req, res) => {
+  const parsed = passwordUpdateSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid password update request' })
+  const { data, error } = await supabaseAuth.auth.getUser(parsed.data.accessToken)
+  if (error || !data.user) return res.status(401).json({ error: 'Invalid password recovery token' })
+  const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(data.user.id, {
+    password: parsed.data.password,
+  })
+  if (updateError) return res.status(400).json({ error: updateError.message })
+  clearAuthCookies(res)
+  res.json({ ok: true, message: 'Password updated. Please sign in again.' })
 })
 
 app.post('/api/auth/logout', (req, res) => {
-  res.clearCookie('geo_session', { path: '/' })
+  clearAuthCookies(res)
   res.json({ ok: true })
 })
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
-  res.json({ user: publicUser(req.user) })
+  res.json({ user: publicUser(req.user, req.profile) })
 })
 
 app.get('/api/runs', requireAuth, async (req, res) => {
