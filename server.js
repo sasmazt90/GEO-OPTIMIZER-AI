@@ -75,6 +75,11 @@ title string, score number 0-100, summary string,
 metrics array of 2-4 objects {label,value},
 bullets array of concise recommendations,
 sections array of objects {title,items} where items is an array of strings.
+Sections must include purpose-specific, evidence-based groups named exactly:
+Already done, Needs improvement, Missing / should add.
+Use these sections to clearly explain what is present, what is weak, and what the user should add next.
+Add additional tool-specific sections after those three when useful.
+Do not invent observed facts that are not supported by the user input or live check result; state uncertainty when needed.
 For fanout also include queries array of 6-10 objects {query,intent}.
 For benchmark also include brands array of exactly 10 objects {rank,brand,share,sentiment,reason}.`
 
