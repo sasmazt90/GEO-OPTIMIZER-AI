@@ -74,6 +74,90 @@ const resultPlaceholders = {
   benchmark: 'Enter a prompt, country, and language to rank likely visible brands.',
 }
 
+const howItWorksContent = {
+  brand: {
+    title: 'How brand entity analysis works',
+    body: 'This check reviews whether AI systems have enough clear signals to understand the brand as a distinct entity in the selected market and language.',
+    steps: [
+      'It combines brand name, domain, country, and language context into an entity visibility prompt.',
+      'It evaluates entity clarity, third-party corroboration, schema/sameAs readiness, category ownership, and answer-engine citation likelihood.',
+      'The result separates what is already strong, what needs improvement, and what should be added next.',
+    ],
+  },
+  crawler: {
+    title: 'How crawler simulation works',
+    body: 'This simulation tests whether common AI crawler user-agents can reach the submitted URL at the HTTP response level.',
+    steps: [
+      'It sends live requests using user-agent strings for GPTBot, ChatGPT-User, OAI-SearchBot, Googlebot, PerplexityBot, ClaudeBot, and related crawlers.',
+      'It reports whether each crawler received an allowed response or was blocked/erroring.',
+      'It does not replace robots.txt, sitemap, rendered HTML, or server log analysis; those remain separate follow-up checks.',
+    ],
+  },
+  visibility: {
+    title: 'How model presence checking works',
+    body: 'This tool checks whether a brand is likely to appear for a specific prompt across selected AI answer surfaces.',
+    steps: [
+      'For supported OpenRouter models, it runs direct answer probes and checks whether the brand appears naturally in the answer.',
+      'For surfaces without a direct query API, such as Google AI Overview or Copilot, it marks findings as an assessment instead of pretending to have live access.',
+      'The result shows model-by-model presence, confidence, evidence gaps, and next actions to improve inclusion.',
+    ],
+  },
+  fanout: {
+    title: 'How query fan-out analysis works',
+    body: 'This analysis estimates how AI search systems may expand one prompt into multiple related intents before generating an answer.',
+    steps: [
+      'You choose the input mode: brand, SEO keywords, website, advanced brief, or direct query fan-out.',
+      'The tool expands the source input into comparison, alternatives, pricing, trust, implementation, and use-case sub-queries.',
+      'The result helps you decide which related prompts and answer paths your brand or content should cover.',
+    ],
+  },
+  research: {
+    title: 'How prompt research works',
+    body: 'This workflow creates a monitorable prompt universe for AI search visibility tracking.',
+    steps: [
+      'It starts with brand, domain, market, and language, then supports structured research steps for competitors, topics, personas, SEO keywords, and Search Console inputs.',
+      'It groups prompts by monitoring purpose, such as branded, non-branded, competitor, topic, persona, and buying-intent queries.',
+      'The result is a practical prompt set you can use to track AI visibility and content gaps over time.',
+    ],
+  },
+  landing: {
+    title: 'How landing page creation works',
+    body: 'This creator turns a main question and brand brief into an answer-first GEO landing page plan.',
+    steps: [
+      'It uses your question, brand, domain, differentiators, competitors, available proof, industry context, and language.',
+      'It creates page blocks designed for AI extraction: direct answer sections, proof, comparisons, FAQs, schema ideas, and concise snippets.',
+      'The result shows which page elements are ready, which need stronger evidence, and what should be added before publishing.',
+    ],
+  },
+  content: {
+    title: 'How content creation works',
+    body: 'This creator produces GEO/LLMO-ready content or a content brief for a target prompt and content type.',
+    steps: [
+      'It uses your prompt, reference URLs, brand/domain context, output language, desired length, and content type.',
+      'It structures content so AI answer engines can extract clear definitions, lists, comparisons, FAQs, evidence, and calls to action.',
+      'The result can be used as a draft direction or a brief, depending on whether brief-only mode is selected.',
+    ],
+  },
+  check: {
+    title: 'How content checking works',
+    body: 'This check reviews an existing URL or pasted content for GEO compliance and answer-engine readability.',
+    steps: [
+      'It analyzes answerability, entity clarity, evidence, structure, schema readiness, freshness, and extraction quality.',
+      'It produces a compliance score and a breakdown of what is already working, what is weak, and what is missing.',
+      'The result focuses on practical fixes that make the page easier for AI systems to cite, summarize, and include.',
+    ],
+  },
+  benchmark: {
+    title: 'How benchmark ranking works',
+    body: 'This benchmark estimates which brands are most likely to appear for a prompt in the selected country and language.',
+    steps: [
+      'It uses your prompt, market, language, and optional industry filter to define the competitive answer context.',
+      'It ranks ten likely visible brands by topical authority, citation footprint, sentiment, and prompt relevance.',
+      'The result helps you compare visibility competitors and identify the signals your brand needs to improve.',
+    ],
+  },
+}
+
 const visibilityModels = ['ChatGPT', 'Google AI Overview', 'Google AI Mode', 'Perplexity', 'Claude', 'Gemini', 'Microsoft Copilot']
 
 async function callApi(payload) {
@@ -583,6 +667,7 @@ function ToolFrame({
   onReset,
   action = 'Start Analysis',
   newAction = 'New Analysis',
+  howItWorks,
 }) {
   const resultMode = loading || Boolean(result) || Boolean(error)
   return (
@@ -620,7 +705,7 @@ function ToolFrame({
             </section>
             <ResultPanel toolId={toolId} result={result} loading={loading} error={error} />
           </div>
-          <HowItWorks />
+          <HowItWorks content={howItWorks || howItWorksContent[toolId]} />
         </>
       )}
     </>
@@ -629,6 +714,7 @@ function ToolFrame({
 
 function ResultPanel({ toolId, result, loading, error, wide = false }) {
   if (!result && !loading && !error) return <EmptyResult toolId={toolId} />
+  if (loading) return <ProcessingPanel toolId={toolId} wide={wide} />
   const data = result || {}
   const hideScore = ['fanout', 'research', 'landing', 'content'].includes(toolId)
   return (
@@ -646,6 +732,30 @@ function ResultPanel({ toolId, result, loading, error, wide = false }) {
         <p className="result-summary">{loading ? 'Running live analysis and preparing structured recommendations.' : data.summary}</p>
       )}
       <ToolSpecificResult toolId={toolId} data={data} />
+    </section>
+  )
+}
+
+function ProcessingPanel({ toolId, wide = false }) {
+  const labels = {
+    brand: 'Checking brand entity signals',
+    visibility: 'Checking model presence',
+    fanout: 'Generating query fan-out',
+    research: 'Building prompt research',
+    landing: 'Creating landing page plan',
+    content: 'Creating GEO content',
+    check: 'Checking content compliance',
+    benchmark: 'Ranking visible brands',
+    crawler: 'Testing crawler access',
+  }
+  return (
+    <section className={`panel result-panel processing-panel result-${toolId}${wide ? ' wide' : ''}`} aria-live="polite" aria-busy="true">
+      <div className="processing-core">
+        <Loader2 className="spin" size={42} />
+        <p className="eyeline">Processing</p>
+        <strong>{labels[toolId] || 'Running analysis'}</strong>
+        <span>We are analyzing live inputs and preparing structured recommendations. This can take a little longer when model probes or page content checks are involved.</span>
+      </div>
     </section>
   )
 }
@@ -886,11 +996,21 @@ function ResultSections({ sections }) {
   ))
 }
 
-function HowItWorks() {
+function HowItWorks({ content }) {
+  const details = content || {
+    title: 'How this analysis works',
+    body: 'This tool turns your input into a structured AI search visibility analysis.',
+    steps: [],
+  }
   return (
     <details className="how" open>
-      <summary>How it works</summary>
-      <p>Each tool turns your input into a structured AI search visibility analysis with clear recommendations for GEO, LLMO, and answer-engine performance.</p>
+      <summary>{details.title}</summary>
+      <p>{details.body}</p>
+      {details.steps?.length > 0 && (
+        <ul>
+          {details.steps.map((step) => <li key={step}>{step}</li>)}
+        </ul>
+      )}
     </details>
   )
 }
@@ -1058,7 +1178,7 @@ function CrawlerSimulation({ onRunComplete }) {
             <div className="form-footer"><p>Results are saved to your workspace.</p><button className="primary-button" onClick={run} disabled={loading}>{loading ? <Loader2 className="spin" size={17} /> : <Bot size={17} />}Start Crawler Simulation</button></div>
           </section>
           <CrawlerResultPanel rows={rows} loading={loading} error={error} />
-          <HowItWorks />
+          <HowItWorks content={howItWorksContent.crawler} />
         </>
       )}
     </>
@@ -1087,6 +1207,7 @@ function ContentStudio({ onRunComplete }) {
 }
 
 function CrawlerResultPanel({ rows, loading, error, wide = false }) {
+  if (loading) return <ProcessingPanel toolId="crawler" wide={wide} />
   if (!rows.length && !loading && !error) {
     return (
       <section className={`panel result-panel crawler-result${wide ? ' wide' : ''}`}>
@@ -1222,7 +1343,7 @@ function ContentCreator({ onRunComplete }) {
 }
 
 function ContentCheck({ onRunComplete }) {
-  const emptyForm = { url: '', content: '', language: 'English' }
+  const emptyForm = { url: '', targetQuery: '', content: '', language: 'English' }
   const [form, setForm] = useState(emptyForm)
   const { loading, result, error, run, reset } = useAiTool('check', onRunComplete)
   const resetTool = () => {
@@ -1232,6 +1353,7 @@ function ContentCheck({ onRunComplete }) {
   return (
     <ToolFrame toolId="check" title="Check your content for GEO compliance" badge="AI search optimized" result={result} loading={loading} error={error} onRun={() => run(form)} onReset={resetTool} action="Start Content Check" newAction="New Content Check">
       <Field label="URL of your content"><input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://domain.com/path/page.html" /></Field>
+      <Field label="Target query or topic"><input value={form.targetQuery} onChange={(e) => setForm({ ...form, targetQuery: e.target.value })} placeholder="e.g. seboreik dermatit belirtileri" /></Field>
       <div className="or-line"><span>OR</span></div>
       <Field label="Paste your content directly"><textarea className="large" value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="Paste the content you want to analyze here..." /></Field>
       <Field label="Output language"><SelectField value={form.language} onChange={(language) => setForm({ ...form, language })} options={languages} /></Field>

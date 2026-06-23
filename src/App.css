@@ -436,6 +436,29 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
   color: var(--muted);
   line-height: 1.55;
 }
+.processing-panel {
+  min-height: 330px;
+  display: grid;
+  place-items: center;
+}
+.processing-core {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  max-width: 520px;
+  text-align: center;
+}
+.processing-core svg {
+  color: var(--accent);
+}
+.processing-core strong {
+  color: var(--navy);
+  font-size: 24px;
+}
+.processing-core span {
+  color: var(--muted);
+  line-height: 1.55;
+}
 .score-ring {
   width: 184px;
   height: 184px;
@@ -542,6 +565,15 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 }
 .how summary { color: #667085; text-transform: uppercase; letter-spacing: 1.6px; font-size: 12px; font-weight: 900; cursor: pointer; }
 .how p { margin: 14px 0 0; color: #344054; line-height: 1.6; }
+.how ul {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding-left: 18px;
+  color: #344054;
+  line-height: 1.5;
+}
+.how li::marker { color: var(--accent); }
 .crawler-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
 .crawler-row {
   display: grid;

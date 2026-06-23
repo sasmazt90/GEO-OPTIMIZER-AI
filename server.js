@@ -61,13 +61,13 @@ app.use('/api/auth/', rateLimit({
 }))
 
 const toolInstructions = {
-  brand: 'Analyze whether AI systems can identify this brand as an entity for the selected country and language. Evaluate entity clarity, third-party corroboration, sameAs/schema readiness, category ownership, answer-engine citation likelihood, and concrete fixes.',
+  brand: 'Analyze whether AI systems can identify this brand as an entity for the selected country and language. Evaluate entity clarity, third-party corroboration, sameAs/schema readiness, category ownership, answer-engine citation likelihood, and concrete fixes. If fetchedPage is supplied, ground observations in that page evidence.',
   visibility: 'Check whether the selected brand is likely to be visible for the user prompt across the selected AI answer engines and model surfaces. Use directModelChecks when supplied: those are live model-answer probes for supported OpenRouter models. For surfaces without direct query support, clearly mark the finding as an assessment. Return model-by-model presence, confidence, likely evidence, citation gaps, competitive pressure, and precise actions to improve inclusion.',
   fanout: 'Create a query fan-out analysis for Google AI Overview, Google AI Mode, and ChatGPT style answer engines. Expand the source prompt into realistic sub-queries grouped by intent, comparison, alternatives, pricing, trust, and implementation.',
   research: 'Generate a structured AI prompt research plan across branded, non-branded, competitor, topic, persona, SEO, and Search Console prompt types. Include monitorable prompt buckets and why each matters.',
-  landing: 'Create a GEO optimized landing page plan with answer-first structure, proof sections, FAQs, comparison context, schema recommendations, and extractable answer blocks.',
-  content: 'Create or brief GEO optimized content that is extractable by AI answer engines. Include outline, answer snippets, evidence needs, FAQ angles, and structure recommendations.',
-  check: 'Review content for GEO compliance. Score answerability, entity clarity, evidence, structure, schema, freshness, and extraction quality. Provide prioritized fixes.',
+  landing: 'Create a GEO optimized landing page plan with answer-first structure, proof sections, FAQs, comparison context, schema recommendations, and extractable answer blocks. If fetchedPage is supplied, use it to avoid recommending sections that already exist.',
+  content: 'Create or brief GEO optimized content that is extractable by AI answer engines. Include outline, answer snippets, evidence needs, FAQ angles, and structure recommendations. If referencePages are supplied, use their actual extracted text as context.',
+  check: 'Review content for GEO compliance using the actual fetchedContent or pasted content, not just the URL. If targetQuery is supplied, first assess whether the fetched/pasted content already answers that exact query or topic. Score answerability, entity clarity, evidence, structure, schema, freshness, and extraction quality. Do not recommend creating content for a topic if the supplied content already covers it; instead identify specific missing evidence, structure, schema, source, internal linking, or clarity improvements.',
   benchmark: 'Return the top 10 brands likely to appear for the user prompt in the selected country and language, ranked by likely AI answer visibility, topical authority, citation footprint, and sentiment.',
 }
 
@@ -81,6 +81,7 @@ Already done, Needs improvement, Missing / should add.
 Use these sections to clearly explain what is present, what is weak, and what the user should add next.
 Add additional tool-specific sections after those three when useful.
 Do not invent observed facts that are not supported by the user input or live check result; state uncertainty when needed.
+Recommendations must be tied to specific evidence from fetched content, pasted content, direct model probes, or the supplied brief. Avoid generic SEO advice when actual evidence is available.
 For fanout also include queries array of 6-10 objects {query,intent}.
 For visibility also include models array of objects {model,presence,confidence,evidence,nextAction}. Presence should be Visible, Likely, Weak, or Not visible.
 For benchmark also include brands array of exactly 10 objects {rank,brand,share,sentiment,reason}.`
@@ -111,6 +112,101 @@ const generateSchema = z.object({
 const crawlSchema = z.object({
   url: z.string().trim().min(3).max(500),
 })
+
+function absoluteUrl(value) {
+  if (!value || typeof value !== 'string') return ''
+  return /^https?:\/\//i.test(value.trim()) ? value.trim() : `https://${value.trim()}`
+}
+
+function extractTitle(html) {
+  const match = String(html).match(/<title[^>]*>([\s\S]*?)<\/title>/i)
+  return match ? match[1].replace(/\s+/g, ' ').trim() : ''
+}
+
+function htmlToText(html) {
+  return String(html)
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+async function fetchPageEvidence(url) {
+  const target = absoluteUrl(url)
+  if (!target) return null
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 9000)
+  try {
+    const response = await fetch(target, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; GEOOptimizerAI/1.0; +https://geo-optimizer-ai.sasmaz.digital)',
+        Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
+      },
+    })
+    const contentType = response.headers.get('content-type') || ''
+    const raw = await response.text()
+    const limited = raw.slice(0, 1_000_000)
+    const text = htmlToText(limited)
+    return {
+      url: target,
+      status: response.status,
+      ok: response.ok,
+      contentType,
+      title: extractTitle(limited),
+      wordCount: text ? text.split(/\s+/).length : 0,
+      textSample: text.slice(0, 12000),
+    }
+  } catch (error) {
+    return {
+      url: target,
+      ok: false,
+      status: 0,
+      error: error.name === 'AbortError' ? 'Fetch timed out' : error.message,
+      wordCount: 0,
+      textSample: '',
+    }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+function splitUrls(value) {
+  return String(value || '')
+    .split(/[\n,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+}
+
+async function enrichInput(tool, input) {
+  const next = { ...input }
+  if ((tool === 'brand' || tool === 'landing' || tool === 'visibility') && input.domain) {
+    next.fetchedPage = await fetchPageEvidence(input.domain)
+  }
+  if (tool === 'check') {
+    if (input.url) next.fetchedContent = await fetchPageEvidence(input.url)
+    if (input.content) {
+      const text = String(input.content).replace(/\s+/g, ' ').trim()
+      next.pastedContent = {
+        wordCount: text ? text.split(/\s+/).length : 0,
+        textSample: text.slice(0, 12000),
+      }
+    }
+  }
+  if (tool === 'content' && input.urls) {
+    next.referencePages = await Promise.all(splitUrls(input.urls).map(fetchPageEvidence))
+  }
+  return next
+}
 
 function cookieOptions(maxAge) {
   return {
@@ -291,11 +387,35 @@ async function callOpenRouter(tool, input) {
   return JSON.parse(data.choices?.[0]?.message?.content || '{}')
 }
 
-const visibilityModelMap = {
-  ChatGPT: 'openai/gpt-4o-mini',
-  Claude: 'anthropic/claude-3.5-haiku',
-  Gemini: 'google/gemini-flash-1.5',
-  Perplexity: 'perplexity/sonar',
+const visibilityModelCandidates = {
+  ChatGPT: ['openai/gpt-chat-latest', '~openai/gpt-mini-latest', 'openai/gpt-5.4-mini', 'openai/gpt-5.1'],
+  Claude: ['~anthropic/claude-haiku-latest', 'anthropic/claude-haiku-4.5', '~anthropic/claude-sonnet-latest', 'anthropic/claude-3-haiku'],
+  Gemini: ['~google/gemini-flash-latest', 'google/gemini-2.5-flash', 'google/gemini-3.5-flash', 'google/gemini-2.5-flash-lite'],
+  Perplexity: ['perplexity/sonar-pro', 'perplexity/sonar-pro-search', 'perplexity/sonar'],
+}
+
+let openRouterModelCache = null
+let openRouterModelCacheAt = 0
+
+async function getOpenRouterModelIds(openRouterKey) {
+  const now = Date.now()
+  if (openRouterModelCache && now - openRouterModelCacheAt < 60 * 60 * 1000) return openRouterModelCache
+  const response = await fetch('https://openrouter.ai/api/v1/models', {
+    headers: { Authorization: `Bearer ${openRouterKey}` },
+  })
+  if (!response.ok) return []
+  const data = await response.json()
+  openRouterModelCache = (data.data || []).map((model) => model.id)
+  openRouterModelCacheAt = now
+  return openRouterModelCache
+}
+
+async function resolveVisibilityModel(surface, openRouterKey) {
+  const candidates = visibilityModelCandidates[surface]
+  if (!candidates?.length) return ''
+  const ids = await getOpenRouterModelIds(openRouterKey)
+  if (ids.length) return candidates.find((candidate) => ids.includes(candidate)) || ''
+  return candidates.find((candidate) => !candidate.startsWith('~')) || ''
 }
 
 function includesBrand(answer, brand) {
@@ -307,17 +427,21 @@ function includesBrand(answer, brand) {
 
 async function directVisibilityChecks(input) {
   const openRouterKey = envValue('OPENROUTER_API_KEY')
-  const selectedModels = Array.isArray(input.models) && input.models.length ? input.models : []
+  const selectedModels = Array.isArray(input.models) && input.models.length
+    ? input.models
+    : ['ChatGPT', 'Google AI Overview', 'Google AI Mode', 'Perplexity', 'Claude', 'Gemini', 'Microsoft Copilot']
   if (!openRouterKey || !selectedModels.length || !input.prompt || !input.brand) return []
 
   const checks = await Promise.all(selectedModels.slice(0, 8).map(async (surface) => {
-    const model = visibilityModelMap[surface]
+    const model = await resolveVisibilityModel(surface, openRouterKey)
     if (!model) {
       return {
         model: surface,
         directQuery: false,
         presence: 'Assessment only',
+        confidence: '-',
         evidence: 'No direct query API is configured for this surface.',
+        nextAction: 'Use the assessment as directional and prioritize citation-ready content for this surface.',
       }
     }
 
@@ -351,7 +475,11 @@ async function directVisibilityChecks(input) {
         model: surface,
         directQuery: true,
         presence: mentioned ? 'Visible' : 'Not visible',
+        confidence: mentioned ? 'High' : 'Medium',
         evidence: mentioned ? `The live model answer mentioned ${input.brand}.` : `The live model answer did not mention ${input.brand}.`,
+        nextAction: mentioned
+          ? 'Maintain the evidence and entity signals that already support this mention.'
+          : `Add clearer evidence connecting ${input.brand} to this query and make it easy for answer engines to extract.`,
         answerSample: String(answer).slice(0, 500),
       }
     } catch (error) {
@@ -359,7 +487,9 @@ async function directVisibilityChecks(input) {
         model: surface,
         directQuery: false,
         presence: 'Unavailable',
+        confidence: '-',
         evidence: error.message,
+        nextAction: 'Retry later or use a supported OpenRouter model for this surface.',
       }
     }
   }))
@@ -375,8 +505,11 @@ function normalizeResult(tool, result) {
   merged.metrics = normalizeMetrics(merged.metrics)
   merged.sections = normalizeSections(merged.sections)
   merged.queries = normalizeQueries(merged.queries)
+  if (tool !== 'fanout') merged.queries = []
   if (tool === 'benchmark') merged.brands = normalizeBrands(merged.brands)
+  if (tool !== 'benchmark') merged.brands = []
   if (tool === 'visibility') merged.models = normalizeModels(merged.models)
+  if (tool !== 'visibility') merged.models = []
   return merged
 }
 
@@ -559,12 +692,17 @@ app.post('/api/generate', requireAuth, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'Invalid analysis request' })
   const { tool, input } = parsed.data
   try {
+    const enrichedInput = await enrichInput(tool, input)
+    const directModelChecks = tool === 'visibility' ? await directVisibilityChecks(enrichedInput) : []
     const analysisInput = tool === 'visibility'
-      ? { ...input, directModelChecks: await directVisibilityChecks(input) }
-      : input
+      ? { ...enrichedInput, directModelChecks }
+      : enrichedInput
     const raw = (await callOpenRouter(tool, analysisInput)) || (await callOpenAI(tool, analysisInput))
     if (!raw) return res.status(503).json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' })
     const result = normalizeResult(tool, raw)
+    if (tool === 'visibility' && directModelChecks.length) {
+      result.models = normalizeModels(directModelChecks)
+    }
     await saveRun(req.user.id, tool, input, result)
     res.json(result)
   } catch (error) {
