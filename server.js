@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import helmet from 'helmet'
 import jwt from 'jsonwebtoken'
 import { nanoid } from 'nanoid'
+import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -19,6 +20,11 @@ const port = process.env.PORT || 8787
 const isProduction = process.env.NODE_ENV === 'production'
 const jwtSecret = process.env.JWT_SECRET || 'dev-only-change-me'
 const dbPath = path.join(__dirname, 'data', 'db.json')
+const supabase = process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY
+  ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+  : null
 
 app.set('trust proxy', 1)
 app.use(helmet({
@@ -86,7 +92,7 @@ function publicUser(user) {
     id: user.id,
     name: user.name,
     email: user.email,
-    createdAt: user.createdAt,
+    createdAt: user.createdAt || user.created_at,
   }
 }
 
@@ -109,15 +115,100 @@ async function requireAuth(req, res, next) {
     const token = req.cookies.geo_session
     if (!token) return res.status(401).json({ error: 'Authentication required' })
     const payload = jwt.verify(token, jwtSecret)
-    const db = await readDb()
-    const user = db.users.find((item) => item.id === payload.sub)
+    const user = await findUserById(payload.sub)
     if (!user) return res.status(401).json({ error: 'Invalid session' })
     req.user = user
-    req.db = db
     next()
   } catch {
     res.status(401).json({ error: 'Invalid session' })
   }
+}
+
+async function findUserByEmail(email) {
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('geo_app_users')
+        .select('*')
+        .eq('email', email)
+        .maybeSingle()
+      if (error) throw error
+      return data
+    } catch (error) {
+      console.warn(`Supabase user lookup failed; using JSON fallback: ${error.message}`)
+    }
+  }
+  const db = await readDb()
+  return db.users.find((user) => user.email === email)
+}
+
+async function findUserById(id) {
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('geo_app_users')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle()
+      if (error) throw error
+      return data
+    } catch (error) {
+      console.warn(`Supabase session lookup failed; using JSON fallback: ${error.message}`)
+    }
+  }
+  const db = await readDb()
+  return db.users.find((user) => user.id === id)
+}
+
+async function createUserRecord(user) {
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('geo_app_users')
+        .insert({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          password_hash: user.passwordHash,
+        })
+        .select('*')
+        .single()
+      if (error) throw error
+      return data
+    } catch (error) {
+      console.warn(`Supabase user insert failed; using JSON fallback: ${error.message}`)
+    }
+  }
+  const db = await readDb()
+  db.users.push(user)
+  await writeDb(db)
+  return user
+}
+
+async function listRuns(userId) {
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('geo_app_runs')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(30)
+      if (error) throw error
+      return data.map((run) => ({
+        id: run.id,
+        userId: run.user_id,
+        type: run.type,
+        payload: run.payload,
+        result: run.result,
+        createdAt: run.created_at,
+      }))
+    } catch (error) {
+      console.warn(`Supabase run lookup failed; using JSON fallback: ${error.message}`)
+    }
+  }
+  const db = await readDb()
+  return db.runs.filter((run) => run.userId === userId).slice(0, 30)
 }
 
 function fallback(tool) {
@@ -210,7 +301,8 @@ async function callOpenRouter(tool, input) {
 
 function normalizeResult(tool, result) {
   const merged = { ...fallback(tool), ...result }
-  merged.score = Math.max(0, Math.min(100, Number(merged.score) || 0))
+  const rawScore = Number(merged.score) || 0
+  merged.score = Math.max(0, Math.min(100, rawScore > 0 && rawScore <= 1 ? Math.round(rawScore * 100) : Math.round(rawScore)))
   merged.bullets = Array.isArray(merged.bullets) ? merged.bullets.slice(0, 6).map(String) : fallback(tool).bullets
   if (tool === 'benchmark') merged.brands = normalizeBrands(merged.brands)
   return merged
@@ -228,6 +320,23 @@ function normalizeBrands(brands) {
 }
 
 async function saveRun(userId, type, payload, result) {
+  if (supabase) {
+    try {
+      const { error } = await supabase
+        .from('geo_app_runs')
+        .insert({
+          id: nanoid(),
+          user_id: userId,
+          type,
+          payload,
+          result,
+        })
+      if (error) throw error
+      return
+    } catch (error) {
+      console.warn(`Supabase run insert failed; using JSON fallback: ${error.message}`)
+    }
+  }
   const db = await readDb()
   db.runs.unshift({
     id: nanoid(),
@@ -242,15 +351,14 @@ async function saveRun(userId, type, payload, result) {
 }
 
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, service: 'GEO OPTIMIZER AI', time: new Date().toISOString() })
+  res.json({ ok: true, service: 'GEO OPTIMIZER AI', database: supabase ? 'supabase' : 'json', time: new Date().toISOString() })
 })
 
 app.post('/api/auth/register', async (req, res) => {
   const parsed = authSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'Invalid registration details' })
-  const db = await readDb()
   const email = parsed.data.email.toLowerCase()
-  if (db.users.some((user) => user.email === email)) return res.status(409).json({ error: 'Email already registered' })
+  if (await findUserByEmail(email)) return res.status(409).json({ error: 'Email already registered' })
   const user = {
     id: nanoid(),
     name: parsed.data.name || email.split('@')[0],
@@ -258,18 +366,17 @@ app.post('/api/auth/register', async (req, res) => {
     passwordHash: await bcrypt.hash(parsed.data.password, 12),
     createdAt: new Date().toISOString(),
   }
-  db.users.push(user)
-  await writeDb(db)
-  setSessionCookie(res, signSession(user))
-  res.status(201).json({ user: publicUser(user) })
+  const createdUser = await createUserRecord(user)
+  setSessionCookie(res, signSession(createdUser))
+  res.status(201).json({ user: publicUser(createdUser) })
 })
 
 app.post('/api/auth/login', async (req, res) => {
   const parsed = authSchema.omit({ name: true }).safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'Invalid login details' })
-  const db = await readDb()
-  const user = db.users.find((item) => item.email === parsed.data.email.toLowerCase())
-  if (!user || !(await bcrypt.compare(parsed.data.password, user.passwordHash))) {
+  const user = await findUserByEmail(parsed.data.email.toLowerCase())
+  const passwordHash = user?.passwordHash || user?.password_hash
+  if (!user || !(await bcrypt.compare(parsed.data.password, passwordHash))) {
     return res.status(401).json({ error: 'Invalid email or password' })
   }
   setSessionCookie(res, signSession(user))
@@ -286,8 +393,7 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
 })
 
 app.get('/api/runs', requireAuth, async (req, res) => {
-  const db = await readDb()
-  res.json({ runs: db.runs.filter((run) => run.userId === req.user.id).slice(0, 30) })
+  res.json({ runs: await listRuns(req.user.id) })
 })
 
 app.post('/api/generate', requireAuth, async (req, res) => {
@@ -295,7 +401,7 @@ app.post('/api/generate', requireAuth, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'Invalid analysis request' })
   const { tool, input } = parsed.data
   try {
-    const raw = (await callOpenAI(tool, input)) || (await callOpenRouter(tool, input)) || fallback(tool)
+    const raw = (await callOpenRouter(tool, input)) || (await callOpenAI(tool, input)) || fallback(tool)
     const result = normalizeResult(tool, raw)
     await saveRun(req.user.id, tool, input, result)
     res.json(result)
