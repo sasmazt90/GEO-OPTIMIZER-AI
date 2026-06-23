@@ -1412,7 +1412,6 @@ function PromptResearch({ onRunComplete }) {
   }
   return (
     <ToolFrame toolId="research" title="Advanced Prompt Research" badge="Looking for a holistic list of prompts" result={result} loading={loading} error={error} onRun={() => run({ step, ...form })} onReset={resetTool} action="Start AI Prompt Research" newAction="New Prompt Research">
-      <ModeSwitch value="Advanced" onChange={() => {}} />
       <div className="steps">{steps.map((s, index) => <button key={s} className={step === index + 1 ? 'active' : ''} onClick={() => setStep(index + 1)}><strong>{index + 1}</strong><span>{s}</span></button>)}</div>
       <p className="info-box">Generate a comprehensive list of search prompts to monitor your brand visibility in AI search engines.</p>
       <div className="two-col">
