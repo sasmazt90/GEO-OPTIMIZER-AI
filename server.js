@@ -25,6 +25,7 @@ const supabase = process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY
     auth: { persistSession: false, autoRefreshToken: false },
   })
   : null
+const requireSupabase = process.env.REQUIRE_SUPABASE !== 'false'
 
 app.set('trust proxy', 1)
 app.use(helmet({
@@ -126,59 +127,50 @@ async function requireAuth(req, res, next) {
 
 async function findUserByEmail(email) {
   if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('geo_app_users')
-        .select('*')
-        .eq('email', email)
-        .maybeSingle()
-      if (error) throw error
-      return data
-    } catch (error) {
-      console.warn(`Supabase user lookup failed; using JSON fallback: ${error.message}`)
-    }
+    const { data, error } = await supabase
+      .from('geo_app_users')
+      .select('*')
+      .eq('email', email)
+      .maybeSingle()
+    if (error) throw error
+    return data
   }
+  if (requireSupabase) throw new Error('Supabase is required but not configured')
   const db = await readDb()
   return db.users.find((user) => user.email === email)
 }
 
 async function findUserById(id) {
   if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('geo_app_users')
-        .select('*')
-        .eq('id', id)
-        .maybeSingle()
-      if (error) throw error
-      return data
-    } catch (error) {
-      console.warn(`Supabase session lookup failed; using JSON fallback: ${error.message}`)
-    }
+    const { data, error } = await supabase
+      .from('geo_app_users')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle()
+    if (error) throw error
+    return data
   }
+  if (requireSupabase) throw new Error('Supabase is required but not configured')
   const db = await readDb()
   return db.users.find((user) => user.id === id)
 }
 
 async function createUserRecord(user) {
   if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('geo_app_users')
-        .insert({
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          password_hash: user.passwordHash,
-        })
-        .select('*')
-        .single()
-      if (error) throw error
-      return data
-    } catch (error) {
-      console.warn(`Supabase user insert failed; using JSON fallback: ${error.message}`)
-    }
+    const { data, error } = await supabase
+      .from('geo_app_users')
+      .insert({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        password_hash: user.passwordHash,
+      })
+      .select('*')
+      .single()
+    if (error) throw error
+    return data
   }
+  if (requireSupabase) throw new Error('Supabase is required but not configured')
   const db = await readDb()
   db.users.push(user)
   await writeDb(db)
@@ -187,26 +179,23 @@ async function createUserRecord(user) {
 
 async function listRuns(userId) {
   if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('geo_app_runs')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(30)
-      if (error) throw error
-      return data.map((run) => ({
-        id: run.id,
-        userId: run.user_id,
-        type: run.type,
-        payload: run.payload,
-        result: run.result,
-        createdAt: run.created_at,
-      }))
-    } catch (error) {
-      console.warn(`Supabase run lookup failed; using JSON fallback: ${error.message}`)
-    }
+    const { data, error } = await supabase
+      .from('geo_app_runs')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(30)
+    if (error) throw error
+    return data.map((run) => ({
+      id: run.id,
+      userId: run.user_id,
+      type: run.type,
+      payload: run.payload,
+      result: run.result,
+      createdAt: run.created_at,
+    }))
   }
+  if (requireSupabase) throw new Error('Supabase is required but not configured')
   const db = await readDb()
   return db.runs.filter((run) => run.userId === userId).slice(0, 30)
 }
@@ -321,22 +310,19 @@ function normalizeBrands(brands) {
 
 async function saveRun(userId, type, payload, result) {
   if (supabase) {
-    try {
-      const { error } = await supabase
-        .from('geo_app_runs')
-        .insert({
-          id: nanoid(),
-          user_id: userId,
-          type,
-          payload,
-          result,
-        })
-      if (error) throw error
-      return
-    } catch (error) {
-      console.warn(`Supabase run insert failed; using JSON fallback: ${error.message}`)
-    }
+    const { error } = await supabase
+      .from('geo_app_runs')
+      .insert({
+        id: nanoid(),
+        user_id: userId,
+        type,
+        payload,
+        result,
+      })
+    if (error) throw error
+    return
   }
+  if (requireSupabase) throw new Error('Supabase is required but not configured')
   const db = await readDb()
   db.runs.unshift({
     id: nanoid(),

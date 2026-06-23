@@ -10,7 +10,7 @@ Production-oriented GEO and LLMO platform with authenticated user accounts, AI a
 - Rate limiting, security headers, request validation, and saved run history
 - OpenAI first, OpenRouter fallback
 - OpenRouter-first AI model calls
-- Supabase persistence adapter with local JSON fallback
+- Supabase persistence adapter; JSON fallback is disabled by default when `REQUIRE_SUPABASE=true`
 - Tools: AI Brand Entity, AI Search Crawler Simulation, Query Fan Out Analysis, AI Prompt Research, GEO Landing Page Creator, GEO Content Creator, GEO Content Check, Benchmark
 
 ## Local Development
@@ -34,6 +34,7 @@ OPENROUTER_MODEL=openai/gpt-4o-mini
 SUPABASE_URL=
 SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SECRET_KEY=
+REQUIRE_SUPABASE=true
 JWT_SECRET=change-this-to-a-long-random-production-secret
 PORT=8787
 APP_URL=http://localhost:5173
@@ -61,6 +62,5 @@ The Express server serves the built frontend from `dist` and exposes `/api/*`.
 ## Notes
 
 - Local user/run data is stored in `data/db.json`, which is gitignored.
-- Supabase is used when `SUPABASE_URL` and `SUPABASE_SECRET_KEY` are configured and the migration has been applied.
-- Local user/run data falls back to `data/db.json` if Supabase is not reachable or the tables are missing.
+- Supabase is required by default. Set `REQUIRE_SUPABASE=false` only for local emergency fallback to `data/db.json`.
 - Keep `.env` out of git. It is already gitignored.
