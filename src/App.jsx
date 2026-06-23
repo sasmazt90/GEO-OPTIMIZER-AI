@@ -5,6 +5,8 @@ import {
   BrainCircuit,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   FileCheck2,
   FilePenLine,
   History,
@@ -93,13 +95,18 @@ async function callApi(payload) {
     credentials: 'include',
     body: JSON.stringify(payload),
   })
-  if (!response.ok) throw new Error('Request failed')
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error(data.error || 'Analysis is temporarily unavailable. Please try again shortly.')
+  }
   return response.json()
 }
 
 function App() {
   const [activeTool, setActiveTool] = useState('brand')
   const [mobileNav, setMobileNav] = useState(false)
+  const [navCollapsed, setNavCollapsed] = useState(false)
+  const [legalPage, setLegalPage] = useState('')
   const [authLoading, setAuthLoading] = useState(true)
   const [user, setUser] = useState(null)
   const [runs, setRuns] = useState([])
@@ -161,35 +168,37 @@ function App() {
   }
 
   if (authLoading) return <LoadingScreen />
-  if (recoveryToken) return <AuthScreen recoveryToken={recoveryToken} onPasswordUpdated={() => setRecoveryToken('')} />
-  if (!user) return <AuthScreen onAuthed={(nextUser) => { setUser(nextUser); loadRuns() }} />
+
+  if (legalPage) {
+    return (
+      <div className="app-shell">
+        <AppHeader user={user} logout={logout} onMenu={() => setMobileNav(true)} />
+        <LegalPage page={legalPage} onBack={() => setLegalPage('')} />
+        <Footer onLegal={setLegalPage} />
+      </div>
+    )
+  }
+
+  if (recoveryToken) {
+    return (
+      <div className="app-shell">
+        <AuthScreen recoveryToken={recoveryToken} onPasswordUpdated={() => setRecoveryToken('')} />
+        <Footer onLegal={setLegalPage} />
+      </div>
+    )
+  }
+  if (!user) {
+    return (
+      <div className="app-shell">
+        <AuthScreen onAuthed={(nextUser) => { setUser(nextUser); loadRuns() }} />
+        <Footer onLegal={setLegalPage} />
+      </div>
+    )
+  }
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <button className="icon-button mobile-only" onClick={() => setMobileNav(true)} aria-label="Open navigation">
-          <Menu size={20} />
-        </button>
-        <div className="brand-mark" aria-label="GEO OPTIMIZER AI">
-          <span className="brand-icon"><Sparkles size={19} /></span>
-          <div>
-            <strong>GEO OPTIMIZER AI</strong>
-            <small>GEO and LLMO command center</small>
-          </div>
-        </div>
-        <nav className="tabs desktop-tabs" aria-label="Feature tabs">
-          {tools.map((tool) => (
-            <button key={tool.id} className={tool.id === activeTool ? 'tab active' : 'tab'} onClick={() => setActiveTool(tool.id)}>
-              <tool.icon size={16} />
-              <span>{tool.label}</span>
-            </button>
-          ))}
-        </nav>
-        <div className="account-chip">
-          <span>{user.name}</span>
-          <button className="icon-button" onClick={logout} aria-label="Sign out"><LogOut size={17} /></button>
-        </div>
-      </header>
+      <AppHeader user={user} logout={logout} onMenu={() => setMobileNav(true)} />
 
       {mobileNav && (
         <div className="mobile-drawer">
@@ -215,19 +224,19 @@ function App() {
         </div>
       )}
 
-      <main className="workspace">
-        <aside className="side-rail">
-          <p className="eyeline">Selected workflow</p>
-          <h1>{active.label}</h1>
-          <p>{active.tag}</p>
-          <div className="rail-stat">
-            <strong>8</strong>
-            <span>AI visibility tools</span>
-          </div>
-          <div className="rail-stat">
-            <strong>Live</strong>
-            <span>OpenAI / OpenRouter ready</span>
-          </div>
+      <main className={navCollapsed ? 'workspace nav-collapsed' : 'workspace'}>
+        <aside className={navCollapsed ? 'side-rail collapsed' : 'side-rail'}>
+          <button className="collapse-button" onClick={() => setNavCollapsed(!navCollapsed)} aria-label={navCollapsed ? 'Expand menu' : 'Collapse menu'}>
+            {navCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+          </button>
+          <nav className="side-nav" aria-label="Tools">
+            {tools.map((tool) => (
+              <button key={tool.id} className={tool.id === activeTool ? 'side-nav-item active' : 'side-nav-item'} onClick={() => setActiveTool(tool.id)} title={tool.label}>
+                <tool.icon size={18} />
+                <span>{tool.label}</span>
+              </button>
+            ))}
+          </nav>
           <div className="recent-runs">
             <div><History size={15} /><strong>Recent runs</strong></div>
             {runs.length === 0 && <p>No saved runs yet.</p>}
@@ -240,10 +249,66 @@ function App() {
           </div>
         </aside>
         <section className="tool-surface">
+          <div className="current-tool">
+            <h1>{active.label}</h1>
+            <p>{active.tag}</p>
+          </div>
           <ToolRouter activeTool={activeTool} onRunComplete={loadRuns} />
         </section>
       </main>
+      <Footer onLegal={setLegalPage} />
     </div>
+  )
+}
+
+function AppHeader({ user, logout, onMenu }) {
+  return (
+    <header className="topbar">
+      <button className="icon-button mobile-only" onClick={onMenu} aria-label="Open navigation">
+        <Menu size={20} />
+      </button>
+      <div className="brand-mark" aria-label="GEO OPTIMIZER AI">
+        <span className="brand-icon"><Sparkles size={19} /></span>
+        <div>
+          <strong>GEO OPTIMIZER AI</strong>
+          <small>AI visibility workspace</small>
+        </div>
+      </div>
+      {user && (
+        <div className="account-chip">
+          <span>{user.name}</span>
+          <button className="icon-button" onClick={logout} aria-label="Sign out"><LogOut size={17} /></button>
+        </div>
+      )}
+    </header>
+  )
+}
+
+function Footer({ onLegal }) {
+  return (
+    <footer className="site-footer">
+      <span>Copyright {new Date().getFullYear()} SASMAZ DIGITAL SOLUTIONS</span>
+      <button onClick={() => onLegal('imprint')}>Imprint</button>
+      <button onClick={() => onLegal('privacy')}>Privacy Policy</button>
+      <button onClick={() => onLegal('terms')}>Terms</button>
+      <button onClick={() => onLegal('cookies')}>Cookie Notice</button>
+    </footer>
+  )
+}
+
+function LegalPage({ page, onBack }) {
+  const content = legalContent[page] || legalContent.imprint
+  return (
+    <main className="legal-page">
+      <button className="ghost-button" onClick={onBack}>Back to app</button>
+      <h1>{content.title}</h1>
+      {content.sections.map((section) => (
+        <section key={section.heading}>
+          <h2>{section.heading}</h2>
+          {section.body.map((line) => <p key={line}>{line}</p>)}
+        </section>
+      ))}
+    </main>
   )
 }
 
@@ -334,10 +399,10 @@ function AuthScreen({ onAuthed, recoveryToken, onPasswordUpdated }) {
       <section className="auth-card">
         <div className="brand-mark">
           <span className="brand-icon"><Sparkles size={19} /></span>
-          <div><strong>GEO OPTIMIZER AI</strong><small>Production workspace</small></div>
+        <div><strong>GEO OPTIMIZER AI</strong><small>AI visibility workspace</small></div>
         </div>
         <h1>{title}</h1>
-        <p>{mode === 'forgot' || mode === 'reset' ? 'Use Supabase Auth email recovery to securely regain access.' : 'Run GEO and LLMO workflows with saved history, protected API access, and account-level sessions.'}</p>
+        <p>{mode === 'forgot' || mode === 'reset' ? 'Enter your email to receive a secure recovery link.' : 'Create, analyze, and monitor your AI search visibility.'}</p>
         <form onSubmit={submit}>
           {mode === 'register' && <Field label="Name"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Your name" /></Field>}
           {mode !== 'reset' && <Field label="Email" required><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="you@company.com" /></Field>}
@@ -388,7 +453,7 @@ function SelectField({ value, onChange, options }) {
   )
 }
 
-function ToolFrame({ title, badge, children, result, loading, onRun, action = 'Start Analysis' }) {
+function ToolFrame({ title, badge, children, result, loading, error, onRun, action = 'Start Analysis' }) {
   return (
     <>
       <div className="tool-head">
@@ -396,38 +461,42 @@ function ToolFrame({ title, badge, children, result, loading, onRun, action = 'S
           <h2>{title}</h2>
           <span>{badge}</span>
         </div>
-        <button className="ghost-button">New Check</button>
+        <button className="ghost-button">Reset</button>
       </div>
       <div className="panel-grid">
         <section className="panel form-panel">{children}
           <div className="form-footer">
-            <p>Used <strong>{Math.floor(400 + title.length * 173)}</strong> times and counting</p>
+            <p>Results are saved to your workspace.</p>
             <button className="primary-button" onClick={onRun} disabled={loading}>
               {loading ? <Loader2 className="spin" size={17} /> : <Wand2 size={17} />}
               {action}
             </button>
           </div>
         </section>
-        <ResultPanel result={result} loading={loading} />
+        <ResultPanel result={result} loading={loading} error={error} />
       </div>
       <HowItWorks />
     </>
   )
 }
 
-function ResultPanel({ result, loading }) {
+function ResultPanel({ result, loading, error }) {
   const data = result || defaultResult('brand')
   return (
     <section className="panel result-panel">
       <div className="result-top">
-        <p className="eyeline">AI output</p>
+        <p className="eyeline">Result</p>
         <strong>{data.title}</strong>
       </div>
       <div className="score-ring" style={{ '--score': `${data.score}%` }}>
         <span>{loading ? '...' : data.score}</span>
         <small>Confidence Score</small>
       </div>
-      <p className="result-summary">{loading ? 'Running live analysis and preparing structured recommendations.' : data.summary}</p>
+      {error ? (
+        <p className="result-error">{error}</p>
+      ) : (
+        <p className="result-summary">{loading ? 'Running live analysis and preparing structured recommendations.' : data.summary}</p>
+      )}
       <div className="metric-row">
         <Metric label="Sources Checked" value="4" />
         <Metric label="Entity Signals" value={data.score > 80 ? 'Strong' : 'Medium'} />
@@ -447,7 +516,7 @@ function HowItWorks() {
   return (
     <details className="how" open>
       <summary>How it works</summary>
-      <p>Each tool structures your prompt, sends it through a server-side AI provider, and returns extractable recommendations for GEO, LLMO, and AI search visibility workflows.</p>
+      <p>Each tool turns your input into a structured AI search visibility analysis with clear recommendations for GEO, LLMO, and answer-engine performance.</p>
     </details>
   )
 }
@@ -455,28 +524,30 @@ function HowItWorks() {
 function useAiTool(toolId, onRunComplete) {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(defaultResult(toolId))
+  const [error, setError] = useState('')
   async function run(input) {
     setLoading(true)
+    setError('')
     try {
       const data = await callApi({ tool: toolId, input })
       setResult(data)
       await onRunComplete?.()
-    } catch {
-      setResult(defaultResult(toolId))
+    } catch (runError) {
+      setError(runError.message)
     } finally {
       setLoading(false)
     }
   }
-  return { loading, result, run }
+  return { loading, result, error, run }
 }
 
 function BrandEntity({ onRunComplete }) {
   const [form, setForm] = useState({ brand: '', domain: '', country: 'Worldwide', language: 'English' })
-  const { loading, result, run } = useAiTool('brand', onRunComplete)
+  const { loading, result, error, run } = useAiTool('brand', onRunComplete)
   return (
-    <ToolFrame title="Does AI know your brand?" badge="Real-time entity verification" result={result} loading={loading} onRun={() => run(form)} action="Check AI Authority">
+    <ToolFrame title="Does AI know your brand?" badge="Real-time entity verification" result={result} loading={loading} error={error} onRun={() => run(form)} action="Check AI Authority">
       <div className="two-col">
-        <Field label="Brand name" required><input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder="e.g. Notion, Stripe, OtterlyAI" /></Field>
+        <Field label="Brand name" required><input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder="e.g. Notion, Stripe, Acme" /></Field>
         <Field label="Domain" required><input value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })} placeholder="https://example.com" /></Field>
         <Field label="Country"><SelectField value={form.country} onChange={(country) => setForm({ ...form, country })} options={countries} /></Field>
         <Field label="Language"><SelectField value={form.language} onChange={(language) => setForm({ ...form, language })} options={languages} /></Field>
@@ -503,13 +574,13 @@ function CrawlerSimulation({ onRunComplete }) {
   }
   return (
     <>
-      <div className="tool-head"><div><h2>Run an AI search crawlability check</h2><span>AI search</span></div><button className="ghost-button">New Check</button></div>
+      <div className="tool-head"><div><h2>Run an AI search crawlability check</h2><span>AI search</span></div><button className="ghost-button">Reset</button></div>
       <section className="panel form-panel full">
         <Field label="Website URL" required><input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com" /></Field>
         <div className="crawler-grid">
           {rows.map((row) => <div className="crawler-row" key={row.name}><CheckCircle2 size={16} /><span>{row.name}</span><strong>{row.status} {row.code !== '-' ? row.code : ''}</strong></div>)}
         </div>
-        <div className="form-footer"><p>Used <strong>1128</strong> times and counting</p><button className="primary-button" onClick={run} disabled={loading}>{loading ? <Loader2 className="spin" size={17} /> : <Bot size={17} />}Start Crawler Simulation</button></div>
+        <div className="form-footer"><p>Results are saved to your workspace.</p><button className="primary-button" onClick={run} disabled={loading}>{loading ? <Loader2 className="spin" size={17} /> : <Bot size={17} />}Start Crawler Simulation</button></div>
       </section>
       <HowItWorks />
     </>
@@ -523,9 +594,9 @@ function ModeSwitch({ value, onChange }) {
 function FanOut({ onRunComplete }) {
   const [mode, setMode] = useState('Query Fan Out')
   const [query, setQuery] = useState('')
-  const { loading, result, run } = useAiTool('fanout', onRunComplete)
+  const { loading, result, error, run } = useAiTool('fanout', onRunComplete)
   return (
-    <ToolFrame title="Run Fan-Out Analysis" badge="All engines" result={result} loading={loading} onRun={() => run({ mode, query })} action="Start Fan-Out Analysis">
+    <ToolFrame title="Run Fan-Out Analysis" badge="All engines" result={result} loading={loading} error={error} onRun={() => run({ mode, query })} action="Start Fan-Out Analysis">
       <ModeSwitch value={mode} onChange={setMode} />
       <Field label="Your query or search prompt" required><input value={query} onChange={(e) => setQuery(e.target.value)} /></Field>
       <div className="check-list">{['Google AI Overview', 'Google AI Mode', 'ChatGPT'].map((x) => <label key={x}><input type="checkbox" defaultChecked />{x}</label>)}</div>
@@ -536,10 +607,10 @@ function FanOut({ onRunComplete }) {
 function PromptResearch({ onRunComplete }) {
   const [step, setStep] = useState(1)
   const [form, setForm] = useState({ brand: '', domain: '', country: 'Worldwide', language: 'English' })
-  const { loading, result, run } = useAiTool('research', onRunComplete)
+  const { loading, result, error, run } = useAiTool('research', onRunComplete)
   const steps = ['Brand & Domain', 'Brand Description', 'Competitors', 'Topics', 'Personas', 'Search Console', 'SEO Keywords', 'Email']
   return (
-    <ToolFrame title="Advanced Prompt Research" badge="Looking for a holistic list of prompts" result={result} loading={loading} onRun={() => run({ step, ...form })} action="Start AI Prompt Research">
+    <ToolFrame title="Advanced Prompt Research" badge="Looking for a holistic list of prompts" result={result} loading={loading} error={error} onRun={() => run({ step, ...form })} action="Start AI Prompt Research">
       <ModeSwitch value="Advanced" onChange={() => {}} />
       <div className="steps">{steps.map((s, index) => <button key={s} className={step === index + 1 ? 'active' : ''} onClick={() => setStep(index + 1)}><strong>{index + 1}</strong><span>{s}</span></button>)}</div>
       <p className="info-box">Generate a comprehensive list of search prompts to monitor your brand visibility in AI search engines.</p>
@@ -555,9 +626,9 @@ function PromptResearch({ onRunComplete }) {
 
 function LandingCreator({ onRunComplete }) {
   const [form, setForm] = useState({ question: '', brand: '', domain: '', differentiators: '', competitors: '', data: '', context: '', instructions: '', language: 'English' })
-  const { loading, result, run } = useAiTool('landing', onRunComplete)
+  const { loading, result, error, run } = useAiTool('landing', onRunComplete)
   return (
-    <ToolFrame title="Create GEO Optimized Landing Page" badge="AI search optimized" result={result} loading={loading} onRun={() => run(form)} action="Start Creating Landing Page">
+    <ToolFrame title="Create GEO Optimized Landing Page" badge="AI search optimized" result={result} loading={loading} error={error} onRun={() => run(form)} action="Start Creating Landing Page">
       <Field label="Main question for your landing page" required><input value={form.question} onChange={(e) => setForm({ ...form, question: e.target.value })} placeholder="What is your main question?" /></Field>
       <div className="two-col">
         <Field label="Your brand" required><input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} /></Field>
@@ -579,9 +650,9 @@ function ContentCreator({ onRunComplete }) {
   const [briefOnly, setBriefOnly] = useState(false)
   const [type, setType] = useState('Article')
   const [form, setForm] = useState({ prompt: '', urls: '', language: 'English', length: 'Short (500 words)', brand: '', domain: '', instructions: '' })
-  const { loading, result, run } = useAiTool('content', onRunComplete)
+  const { loading, result, error, run } = useAiTool('content', onRunComplete)
   return (
-    <ToolFrame title="Create GEO Optimized Content" badge="AI engines & prompts" result={result} loading={loading} onRun={() => run({ briefOnly, type, ...form })} action="Start Creating Content">
+    <ToolFrame title="Create GEO Optimized Content" badge="AI engines & prompts" result={result} loading={loading} error={error} onRun={() => run({ briefOnly, type, ...form })} action="Start Creating Content">
       <label className="checkbox-line"><input type="checkbox" checked={briefOnly} onChange={(e) => setBriefOnly(e.target.checked)} /> I would like to receive a content brief instead of the full content</label>
       <Field label="Prompt with no or low visibility" required><input value={form.prompt} onChange={(e) => setForm({ ...form, prompt: e.target.value })} placeholder="What is your main question?" /></Field>
       <Field label="Add up to 3 relevant URLs"><textarea value={form.urls} onChange={(e) => setForm({ ...form, urls: e.target.value })} placeholder="https://domain.com/path/file.html" /></Field>
@@ -600,9 +671,9 @@ function ContentCreator({ onRunComplete }) {
 
 function ContentCheck({ onRunComplete }) {
   const [form, setForm] = useState({ url: '', content: '', language: 'English' })
-  const { loading, result, run } = useAiTool('check', onRunComplete)
+  const { loading, result, error, run } = useAiTool('check', onRunComplete)
   return (
-    <ToolFrame title="Check your content for GEO compliance" badge="AI search optimized" result={result} loading={loading} onRun={() => run(form)} action="Start Content Check">
+    <ToolFrame title="Check your content for GEO compliance" badge="AI search optimized" result={result} loading={loading} error={error} onRun={() => run(form)} action="Start Content Check">
       <Field label="URL of your content"><input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://domain.com/path/page.html" /></Field>
       <div className="or-line"><span>OR</span></div>
       <Field label="Paste your content directly"><textarea className="large" value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="Paste the content you want to analyze here..." /></Field>
@@ -616,6 +687,7 @@ function Benchmark({ onRunComplete }) {
   const [loading, setLoading] = useState(false)
   const [rows, setRows] = useState([])
   const [result, setResult] = useState(defaultResult('benchmark'))
+  const [error, setError] = useState('')
   const tableRows = useMemo(() => {
     const source = rows.length ? rows : benchmarkBrands.map((brand, i) => ({
     rank: i + 1,
@@ -634,20 +706,21 @@ function Benchmark({ onRunComplete }) {
   }, [rows])
   async function run() {
     setLoading(true)
+    setError('')
     try {
       const data = await callApi({ tool: 'benchmark', input: form })
       setResult(data)
       setRows((data.brands || []).slice(0, 10))
       await onRunComplete?.()
-    } catch {
-      setResult(defaultResult('benchmark'))
+    } catch (runError) {
+      setError(runError.message)
     } finally {
       setLoading(false)
     }
   }
   return (
     <>
-      <ToolFrame title="Benchmark AI visibility" badge="Top 10 brands by prompt, country, and language" result={result} loading={loading} onRun={run} action="Run Benchmark">
+      <ToolFrame title="Benchmark AI visibility" badge="Top 10 brands by prompt, country, and language" result={result} loading={loading} error={error} onRun={run} action="Run Benchmark">
         <Field label="Search prompt" required><input value={form.prompt} onChange={(e) => setForm({ ...form, prompt: e.target.value })} placeholder="Best CRM software for mid-market teams" /></Field>
         <div className="three-col">
           <Field label="Country"><SelectField value={form.country} onChange={(country) => setForm({ ...form, country })} options={countries} /></Field>
@@ -669,3 +742,125 @@ function Benchmark({ onRunComplete }) {
 }
 
 export default App
+
+const legalContent = {
+  imprint: {
+    title: 'Imprint',
+    sections: [
+      {
+        heading: 'Service Provider',
+        body: [
+          'SASMAZ DIGITAL SOLUTIONS',
+          'Tolgar Sasmaz',
+          '81543 Munich, Germany',
+          'Email: tolgar@sasmaz.digital',
+        ],
+      },
+      {
+        heading: 'Responsible for Content',
+        body: [
+          'Tolgar Sasmaz, 81543 Munich, Germany.',
+        ],
+      },
+      {
+        heading: 'Dispute Resolution',
+        body: [
+          'The European Commission provides an online dispute resolution platform at https://ec.europa.eu/consumers/odr/. We are not obliged and not willing to participate in dispute settlement proceedings before a consumer arbitration board.',
+        ],
+      },
+    ],
+  },
+  privacy: {
+    title: 'Privacy Policy',
+    sections: [
+      {
+        heading: 'Controller',
+        body: [
+          'SASMAZ DIGITAL SOLUTIONS, Tolgar Sasmaz, 81543 Munich, Germany, tolgar@sasmaz.digital.',
+        ],
+      },
+      {
+        heading: 'Data We Process',
+        body: [
+          'We process account data such as email address and name, authentication data handled by Supabase Auth, and the prompts, URLs, settings, and generated results you save in your workspace.',
+          'We also process technical data such as IP address, request metadata, and security logs through our hosting and infrastructure providers.',
+        ],
+      },
+      {
+        heading: 'Purpose and Legal Basis',
+        body: [
+          'We process data to provide the GEO OPTIMIZER AI service, secure user accounts, save analysis history, prevent abuse, and improve service reliability.',
+          'The legal basis is contract performance, legitimate interests in secure service operation, and consent where required.',
+        ],
+      },
+      {
+        heading: 'Processors',
+        body: [
+          'We use Supabase for authentication and database storage, Vercel for hosting, and OpenRouter/OpenAI-compatible model providers for AI analysis requests.',
+          'AI analysis inputs may be transmitted to the configured model provider to generate results.',
+        ],
+      },
+      {
+        heading: 'Retention and Rights',
+        body: [
+          'Account and workspace data is retained while your account exists or as required by law. You may request access, correction, deletion, restriction, portability, or objection by contacting tolgar@sasmaz.digital.',
+          'You may also lodge a complaint with a competent data protection authority.',
+        ],
+      },
+    ],
+  },
+  terms: {
+    title: 'Terms of Use',
+    sections: [
+      {
+        heading: 'Service',
+        body: [
+          'GEO OPTIMIZER AI provides tools for AI search visibility analysis, content checks, prompt research, crawler simulation, and benchmarking.',
+        ],
+      },
+      {
+        heading: 'User Responsibilities',
+        body: [
+          'You are responsible for the accuracy, legality, and rights clearance of content, URLs, prompts, and data you submit.',
+          'You must not use the service for unlawful, harmful, abusive, or security-testing activity against third parties without authorization.',
+        ],
+      },
+      {
+        heading: 'AI Results',
+        body: [
+          'AI-generated outputs may be incomplete or inaccurate and should be reviewed before business, legal, or public use.',
+          'The service does not provide legal, financial, or professional advice.',
+        ],
+      },
+      {
+        heading: 'Availability',
+        body: [
+          'We aim to provide reliable access, but availability may depend on third-party providers such as hosting, database, and AI model services.',
+        ],
+      },
+    ],
+  },
+  cookies: {
+    title: 'Cookie Notice',
+    sections: [
+      {
+        heading: 'Essential Cookies',
+        body: [
+          'We use essential authentication cookies to keep users signed in and protect sessions. These cookies are required for the application to function.',
+        ],
+      },
+      {
+        heading: 'Analytics and Marketing Cookies',
+        body: [
+          'We do not currently use non-essential analytics or marketing cookies in this application.',
+        ],
+      },
+      {
+        heading: 'Managing Cookies',
+        body: [
+          'You can delete or block cookies in your browser settings. Blocking essential cookies may prevent login and workspace features from working.',
+        ],
+      },
+    ],
+  },
+}

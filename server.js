@@ -437,15 +437,14 @@ app.post('/api/generate', requireAuth, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'Invalid analysis request' })
   const { tool, input } = parsed.data
   try {
-    const raw = (await callOpenRouter(tool, input)) || (await callOpenAI(tool, input)) || fallback(tool)
+    const raw = (await callOpenRouter(tool, input)) || (await callOpenAI(tool, input))
+    if (!raw) return res.status(503).json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' })
     const result = normalizeResult(tool, raw)
     await saveRun(req.user.id, tool, input, result)
     res.json(result)
   } catch (error) {
     console.error(error.message)
-    const result = normalizeResult(tool, fallback(tool))
-    await saveRun(req.user.id, tool, input, result)
-    res.json(result)
+    res.status(502).json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' })
   }
 })
 
