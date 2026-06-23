@@ -16,7 +16,6 @@ import {
   Menu,
   Search,
   ShieldCheck,
-  Sparkles,
   Wand2,
   X,
 } from 'lucide-react'
@@ -268,7 +267,7 @@ function AppHeader({ user, logout, onMenu }) {
         <Menu size={20} />
       </button>
       <div className="brand-mark" aria-label="GEO OPTIMIZER AI">
-        <span className="brand-icon"><Sparkles size={19} /></span>
+        <GeoLogo />
         <div>
           <strong>GEO OPTIMIZER AI</strong>
           <small>AI visibility workspace</small>
@@ -281,6 +280,21 @@ function AppHeader({ user, logout, onMenu }) {
         </div>
       )}
     </header>
+  )
+}
+
+function GeoLogo() {
+  return (
+    <span className="brand-icon" aria-hidden="true">
+      <svg viewBox="0 0 44 44" role="img" focusable="false">
+        <path className="logo-orbit" d="M22 7.5c8.01 0 14.5 6.49 14.5 14.5S30.01 36.5 22 36.5 7.5 30.01 7.5 22 13.99 7.5 22 7.5Z" />
+        <path className="logo-axis" d="M22 10.5v23M10.5 22h23" />
+        <path className="logo-signal" d="M14.5 28.5c3.1-5.8 7.9-9.5 15-12.8M17 14.5c5.8 2.6 9.5 7.2 12.4 14.7" />
+        <circle className="logo-node primary" cx="22" cy="22" r="3.6" />
+        <circle className="logo-node" cx="30.8" cy="15" r="2.3" />
+        <circle className="logo-node" cx="14.2" cy="28.8" r="2.3" />
+      </svg>
+    </span>
   )
 }
 
@@ -398,7 +412,7 @@ function AuthScreen({ onAuthed, recoveryToken, onPasswordUpdated }) {
     <main className="auth-shell">
       <section className="auth-card">
         <div className="brand-mark">
-          <span className="brand-icon"><Sparkles size={19} /></span>
+          <GeoLogo />
         <div><strong>GEO OPTIMIZER AI</strong><small>AI visibility workspace</small></div>
         </div>
         <h1>{title}</h1>
@@ -489,8 +503,10 @@ function ResultPanel({ result, loading, error }) {
         <strong>{data.title}</strong>
       </div>
       <div className="score-ring" style={{ '--score': `${data.score}%` }}>
-        <span>{loading ? '...' : data.score}</span>
-        <small>Confidence Score</small>
+        <div className="score-content">
+          <strong>{loading ? '...' : data.score}</strong>
+          <small>Confidence Score</small>
+        </div>
       </div>
       {error ? (
         <p className="result-error">{error}</p>
