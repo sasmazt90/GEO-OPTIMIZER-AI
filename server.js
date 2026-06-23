@@ -63,10 +63,10 @@ app.use('/api/auth/', rateLimit({
 const toolInstructions = {
   brand: 'Analyze whether AI systems can identify this brand as an entity for the selected country and language. Evaluate entity clarity, third-party corroboration, sameAs/schema readiness, category ownership, answer-engine citation likelihood, and concrete fixes. If fetchedPage is supplied, ground observations in that page evidence.',
   visibility: 'Check whether the selected brand is likely to be visible for the user prompt across the selected AI answer engines and model surfaces. Use directModelChecks when supplied: those are live model-answer probes for supported OpenRouter models. For surfaces without direct query support, clearly mark the finding as an assessment. Return model-by-model presence, confidence, likely evidence, citation gaps, competitive pressure, and precise actions to improve inclusion.',
-  fanout: 'Create a query fan-out analysis for Google AI Overview, Google AI Mode, and ChatGPT style answer engines. Expand the source prompt into realistic sub-queries grouped by intent, comparison, alternatives, pricing, trust, and implementation.',
+  fanout: 'Create a query fan-out analysis for the selected AI surfaces in input.surfaces. Expand the source prompt into realistic sub-queries grouped by intent, comparison, alternatives, pricing, trust, and implementation. Explain how each selected surface may fan out or reformulate the query differently.',
   research: 'Generate a structured AI prompt research plan across branded, non-branded, competitor, topic, persona, SEO, and Search Console prompt types. Include monitorable prompt buckets and why each matters.',
   landing: 'Create a GEO optimized landing page plan with answer-first structure, proof sections, FAQs, comparison context, schema recommendations, and extractable answer blocks. If fetchedPage is supplied, use it to avoid recommending sections that already exist.',
-  content: 'Create or brief GEO optimized content that is extractable by AI answer engines. Include outline, answer snippets, evidence needs, FAQ angles, and structure recommendations. If referencePages are supplied, use their actual extracted text as context.',
+  content: 'Create or brief GEO optimized content that is extractable by AI answer engines. Include outline, answer snippets, evidence needs, FAQ angles, and structure recommendations. If referencePages are supplied, use their actual extracted text as context. Respect input.settings such as expert quotes, FAQs, comparison table, external links, or CTA when selected.',
   check: 'Review content for GEO compliance using the actual fetchedContent or pasted content, not just the URL. If targetQuery is supplied, first assess whether the fetched/pasted content already answers that exact query or topic. Score answerability, entity clarity, evidence, structure, schema, freshness, and extraction quality. Do not recommend creating content for a topic if the supplied content already covers it; instead identify specific missing evidence, structure, schema, source, internal linking, or clarity improvements.',
   benchmark: 'Return the top 10 brands likely to appear for the user prompt in the selected country and language, ranked by likely AI answer visibility, topical authority, citation footprint, and sentiment.',
 }
@@ -82,7 +82,7 @@ Use these sections to clearly explain what is present, what is weak, and what th
 Add additional tool-specific sections after those three when useful.
 Do not invent observed facts that are not supported by the user input or live check result; state uncertainty when needed.
 Recommendations must be tied to specific evidence from fetched content, pasted content, direct model probes, or the supplied brief. Avoid generic SEO advice when actual evidence is available.
-For fanout also include queries array of 6-10 objects {query,intent}.
+For fanout also include queries array of 6-10 objects {query,intent} and surfaceInsights array of objects {surface,behavior,queryPatterns} where queryPatterns is a short string.
 For visibility also include models array of objects {model,presence,confidence,evidence,nextAction}. Presence should be Visible, Likely, Weak, or Not visible.
 For benchmark also include brands array of exactly 10 objects {rank,brand,share,sentiment,reason}.`
 
@@ -332,6 +332,7 @@ function fallback() {
     bullets: [],
     sections: [],
     queries: [],
+    surfaceInsights: [],
     brands: [],
     models: [],
   }
@@ -510,6 +511,7 @@ function normalizeResult(tool, result) {
   merged.sections = normalizeSections(merged.sections)
   merged.queries = normalizeQueries(merged.queries)
   if (tool !== 'fanout') merged.queries = []
+  merged.surfaceInsights = tool === 'fanout' ? normalizeSurfaceInsights(merged.surfaceInsights) : []
   if (tool === 'benchmark') merged.brands = normalizeBrands(merged.brands)
   if (tool !== 'benchmark') merged.brands = []
   if (tool === 'visibility') merged.models = normalizeModels(merged.models)
@@ -538,6 +540,15 @@ function normalizeQueries(queries) {
   return queries.slice(0, 10).map((query) => ({
     query: String(query?.query || query),
     intent: String(query?.intent || query?.reason || 'Related search path'),
+  }))
+}
+
+function normalizeSurfaceInsights(surfaceInsights) {
+  if (!Array.isArray(surfaceInsights)) return []
+  return surfaceInsights.slice(0, 10).map((row) => ({
+    surface: String(row.surface || row.model || 'AI surface'),
+    behavior: String(row.behavior || row.summary || 'Surface-specific fan-out behavior'),
+    queryPatterns: String(row.queryPatterns || row.patterns || row.queries || 'Related intent expansion'),
   }))
 }
 
@@ -721,6 +732,13 @@ app.post('/api/generate', requireAuth, async (req, res) => {
     const result = normalizeResult(tool, raw)
     if (tool === 'visibility' && directModelChecks.length) {
       result.models = normalizeModels(directModelChecks)
+    }
+    if (tool === 'fanout' && !result.surfaceInsights.length && Array.isArray(analysisInput.surfaces)) {
+      result.surfaceInsights = normalizeSurfaceInsights(analysisInput.surfaces.map((surface) => ({
+        surface,
+        behavior: 'Included in the selected query intelligence model.',
+        queryPatterns: 'Review the generated fan-out queries through this surface lens.',
+      })))
     }
     await saveRun(req.user.id, tool, input, result)
     res.json(result)

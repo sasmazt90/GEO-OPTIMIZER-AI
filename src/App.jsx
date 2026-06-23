@@ -58,6 +58,8 @@ const groupDescriptions = {
 
 const promptModes = ['Your brand', 'SEO keywords', 'A website', 'Advanced', 'Query Fan Out']
 const crawlers = ['GPTBot', 'ChatGPT-User', 'OAI-SearchBot', 'Googlebot', 'GoogleOther', 'PerplexityBot', 'ClaudeBot', 'Grok']
+const queryIntelligenceSurfaces = ['Google AI Overview', 'Google AI Mode', 'ChatGPT', 'Perplexity', 'Claude', 'Gemini', 'Microsoft Copilot']
+const contentSettingOptions = ['Include expert quotes', 'Include FAQs', 'Include a comparison table', 'Include external links', 'Include a CTA']
 const fanoutModeHelp = {
   'Your brand': 'Enter your brand or branded search prompt',
   'SEO keywords': 'Enter SEO keywords, one per line or comma-separated',
@@ -226,6 +228,7 @@ function buildReportWorkbook(toolId, data) {
     tableHtml('Status and Recommendations', ['Section', 'Item'], rowsFromSections(sections)),
     tableHtml('Action Items', ['Recommendation'], bullets.map((item) => [item])),
     tableHtml('Generated Queries', ['Query', 'Intent'], (data.queries || []).map((item) => [item.query || item, item.intent || item.reason || ''])),
+    tableHtml('Surface Insights', ['AI Surface', 'Fan-Out Behavior', 'Query Patterns'], (data.surfaceInsights || []).map((row) => [row.surface, row.behavior, row.queryPatterns])),
     tableHtml('Model Presence', ['AI Surface', 'Presence', 'Confidence', 'Evidence / Gap', 'Next Action'], (data.models || []).map((row) => [row.model || row.surface, row.presence || row.status, row.confidence || '-', row.evidence || row.reason || '-', row.nextAction || row.action || '-'])),
     tableHtml('Top Brands', ['Rank', 'Brand', 'Visibility', 'Status', 'Primary Driver'], (data.brands || []).map((row, index) => [row.rank || index + 1, row.brand, row.share, row.sentiment, row.reason])),
     tableHtml('Crawler Results', ['Crawler', 'Status', 'HTTP Code'], (data.rows || []).map((row) => [row.name, row.status, row.code])),
@@ -922,6 +925,7 @@ function ToolSpecificResult({ toolId, data }) {
       <>
         <MetricGrid metrics={metrics} />
         <StatusBoard sections={statusSections} />
+        <SurfaceInsightsTable rows={data.surfaceInsights || []} />
         <ResultSection title="Generated Query Fan-Out">
           <div className="query-list">
             {queries.slice(0, 8).map((item, index) => (
@@ -997,6 +1001,28 @@ function ToolSpecificResult({ toolId, data }) {
       <ResultSections sections={detailSections} />
       <ul className="recommendations">{bullets.map((item) => <li key={item}><CheckCircle2 size={16} />{item}</li>)}</ul>
     </>
+  )
+}
+
+function SurfaceInsightsTable({ rows }) {
+  if (!Array.isArray(rows) || !rows.length) return null
+  return (
+    <ResultSection title="Surface-specific fan-out">
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>AI Surface</th><th>Fan-Out Behavior</th><th>Query Patterns</th></tr></thead>
+          <tbody>
+            {rows.slice(0, 10).map((row) => (
+              <tr key={row.surface}>
+                <td>{row.surface}</td>
+                <td>{row.behavior}</td>
+                <td>{row.queryPatterns}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </ResultSection>
   )
 }
 
@@ -1384,17 +1410,34 @@ function ModeSwitch({ value, onChange }) {
 function FanOut({ onRunComplete }) {
   const [mode, setMode] = useState('Query Fan Out')
   const [query, setQuery] = useState('')
+  const [surfaces, setSurfaces] = useState(queryIntelligenceSurfaces)
   const { loading, result, error, run, reset } = useAiTool('fanout', onRunComplete)
   const resetTool = () => {
     reset()
     setMode('Query Fan Out')
     setQuery('')
+    setSurfaces(queryIntelligenceSurfaces)
+  }
+  function toggleSurface(surface) {
+    const nextSurfaces = surfaces.includes(surface)
+      ? surfaces.filter((item) => item !== surface)
+      : [...surfaces, surface]
+    setSurfaces(nextSurfaces.length ? nextSurfaces : [surface])
   }
   return (
-    <ToolFrame toolId="fanout" title="Run Fan-Out Analysis" badge="All engines" result={result} loading={loading} error={error} onRun={() => run({ mode, query })} onReset={resetTool} action="Start Fan-Out Analysis" newAction="New Fan-Out Analysis">
+    <ToolFrame toolId="fanout" title="Run Fan-Out Analysis" badge="All engines" result={result} loading={loading} error={error} onRun={() => run({ mode, query, surfaces })} onReset={resetTool} action="Start Fan-Out Analysis" newAction="New Fan-Out Analysis">
       <ModeSwitch value={mode} onChange={setMode} />
       <Field label={fanoutModeHelp[mode]} required><input value={query} onChange={(e) => setQuery(e.target.value)} /></Field>
-      <div className="check-list">{['Google AI Overview', 'Google AI Mode', 'ChatGPT'].map((x) => <label key={x}><input type="checkbox" defaultChecked />{x}</label>)}</div>
+      <FieldGroup label="AI surfaces to model">
+        <div className="check-list compact model-list">
+          {queryIntelligenceSurfaces.map((surface) => (
+            <label key={surface}>
+              <input type="checkbox" checked={surfaces.includes(surface)} onChange={() => toggleSurface(surface)} />
+              {surface}
+            </label>
+          ))}
+        </div>
+      </FieldGroup>
     </ToolFrame>
   )
 }
@@ -1454,6 +1497,7 @@ function LandingCreator({ onRunComplete }) {
 function ContentCreator({ onRunComplete }) {
   const [briefOnly, setBriefOnly] = useState(false)
   const [type, setType] = useState('Article')
+  const [settings, setSettings] = useState([])
   const emptyForm = { prompt: '', urls: '', language: 'English', length: 'Short (500 words)', brand: '', domain: '', instructions: '' }
   const [form, setForm] = useState(emptyForm)
   const { loading, result, error, run, reset } = useAiTool('content', onRunComplete)
@@ -1461,10 +1505,16 @@ function ContentCreator({ onRunComplete }) {
     reset()
     setBriefOnly(false)
     setType('Article')
+    setSettings([])
     setForm(emptyForm)
   }
+  function toggleSetting(setting) {
+    setSettings(settings.includes(setting)
+      ? settings.filter((item) => item !== setting)
+      : [...settings, setting])
+  }
   return (
-    <ToolFrame toolId="content" title="Create GEO Optimized Content" badge="AI engines & prompts" result={result} loading={loading} error={error} onRun={() => run({ briefOnly, type, ...form })} onReset={resetTool} action="Start Creating Content" newAction="New Content">
+    <ToolFrame toolId="content" title="Create GEO Optimized Content" badge="AI engines & prompts" result={result} loading={loading} error={error} onRun={() => run({ briefOnly, type, settings, ...form })} onReset={resetTool} action="Start Creating Content" newAction="New Content">
       <label className="checkbox-line"><input type="checkbox" checked={briefOnly} onChange={(e) => setBriefOnly(e.target.checked)} /> I would like to receive a content brief instead of the full content</label>
       <Field label="Prompt with no or low visibility" required><input value={form.prompt} onChange={(e) => setForm({ ...form, prompt: e.target.value })} placeholder="What is your main question?" /></Field>
       <Field label="Add up to 3 relevant URLs"><textarea value={form.urls} onChange={(e) => setForm({ ...form, urls: e.target.value })} placeholder="https://domain.com/path/file.html" /></Field>
@@ -1476,7 +1526,14 @@ function ContentCreator({ onRunComplete }) {
       </div>
       <div className="mode-row small">{['Article', 'Blog Post', 'Listicle', 'Comparison'].map((x) => <button key={x} className={type === x ? 'active' : ''} onClick={() => setType(x)}>{x}</button>)}</div>
       <Field label="Additional instructions"><textarea value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} /></Field>
-      <div className="check-list compact">{['Include expert quotes', 'Include FAQs', 'Include a comparison table', 'Include external links', 'Include a CTA'].map((x) => <label key={x}><input type="checkbox" />{x}</label>)}</div>
+      <div className="check-list compact">
+        {contentSettingOptions.map((setting) => (
+          <label key={setting}>
+            <input type="checkbox" checked={settings.includes(setting)} onChange={() => toggleSetting(setting)} />
+            {setting}
+          </label>
+        ))}
+      </div>
     </ToolFrame>
   )
 }
