@@ -18,21 +18,25 @@ const __dirname = path.dirname(__filename)
 const app = express()
 const port = process.env.PORT || 8787
 const isProduction = process.env.NODE_ENV === 'production'
-const jwtSecret = process.env.JWT_SECRET || 'dev-only-change-me'
+const envValue = (key, fallback = '') => (process.env[key] || fallback).trim()
+const jwtSecret = envValue('JWT_SECRET', 'dev-only-change-me')
 const dbPath = path.join(__dirname, 'data', 'db.json')
-const supabase = process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY
-  ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, {
+const supabaseUrl = envValue('SUPABASE_URL')
+const supabaseSecretKey = envValue('SUPABASE_SECRET_KEY')
+const appUrl = envValue('APP_URL', 'http://localhost:5173')
+const supabase = supabaseUrl && supabaseSecretKey
+  ? createClient(supabaseUrl, supabaseSecretKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
   : null
-const requireSupabase = process.env.REQUIRE_SUPABASE !== 'false'
+const requireSupabase = envValue('REQUIRE_SUPABASE', 'true') !== 'false'
 
 app.set('trust proxy', 1)
 app.use(helmet({
   contentSecurityPolicy: isProduction ? undefined : false,
 }))
 app.use(cors({
-  origin: process.env.APP_URL || 'http://localhost:5173',
+  origin: appUrl,
   credentials: true,
 }))
 app.use(express.json({ limit: '2mb' }))
@@ -237,15 +241,16 @@ function makeBenchmarkRows() {
 }
 
 async function callOpenAI(tool, input) {
-  if (!process.env.OPENAI_API_KEY) return null
+  const openAiKey = envValue('OPENAI_API_KEY')
+  if (!openAiKey) return null
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${openAiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      model: envValue('OPENAI_MODEL', 'gpt-4o-mini'),
       temperature: 0.3,
       response_format: { type: 'json_object' },
       messages: [
@@ -264,17 +269,18 @@ Return strict JSON with keys: title, score, summary, bullets. Score is 0-100. Bu
 }
 
 async function callOpenRouter(tool, input) {
-  if (!process.env.OPENROUTER_API_KEY) return null
+  const openRouterKey = envValue('OPENROUTER_API_KEY')
+  if (!openRouterKey) return null
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      Authorization: `Bearer ${openRouterKey}`,
       'Content-Type': 'application/json',
-      'HTTP-Referer': process.env.APP_URL || 'http://localhost:5173',
+      'HTTP-Referer': appUrl,
       'X-Title': 'GEO OPTIMIZER AI',
     },
     body: JSON.stringify({
-      model: process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini',
+      model: envValue('OPENROUTER_MODEL', 'openai/gpt-4o-mini'),
       temperature: 0.3,
       response_format: { type: 'json_object' },
       messages: [
