@@ -1168,6 +1168,59 @@ function HowItWorks({ content }) {
   )
 }
 
+function hasText(value) {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function validateToolInput(toolId, input = {}) {
+  const requirements = {
+    brand: [
+      ['brand', 'Enter a brand name.'],
+      ['domain', 'Enter a domain.'],
+    ],
+    visibility: [
+      ['brand', 'Enter a brand name.'],
+      ['prompt', 'Enter a search prompt or user question.'],
+    ],
+    fanout: [
+      ['query', 'Enter a query, keyword, website, or brief to analyze.'],
+    ],
+    research: [
+      ['brand', 'Enter your brand.'],
+      ['domain', 'Enter your domain.'],
+    ],
+    landing: [
+      ['question', 'Enter the main landing page question.'],
+      ['brand', 'Enter your brand.'],
+      ['domain', 'Enter your domain.'],
+    ],
+    content: [
+      ['prompt', 'Enter the content prompt.'],
+    ],
+    benchmark: [
+      ['prompt', 'Enter the benchmark search prompt.'],
+    ],
+  }
+  if (toolId === 'check' && !hasText(input.url) && !hasText(input.content)) {
+    return 'Enter a content URL or paste content to analyze.'
+  }
+  const missing = (requirements[toolId] || []).find(([key]) => !hasText(input[key]))
+  if (missing) return missing[1]
+  if (toolId === 'visibility' && (!Array.isArray(input.models) || !input.models.length)) return 'Select at least one AI surface.'
+  if (toolId === 'fanout' && (!Array.isArray(input.surfaces) || !input.surfaces.length)) return 'Select at least one AI surface.'
+  return ''
+}
+
+function isValidWebsiteUrl(value) {
+  if (!hasText(value)) return false
+  try {
+    const target = /^https?:\/\//i.test(value.trim()) ? value.trim() : `https://${value.trim()}`
+    return new URL(target).hostname.includes('.')
+  } catch {
+    return false
+  }
+}
+
 function useAiTool(toolId, onRunComplete) {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
@@ -1178,6 +1231,12 @@ function useAiTool(toolId, onRunComplete) {
     setLoading(false)
   }
   async function run(input) {
+    const validationError = validateToolInput(toolId, input)
+    if (validationError) {
+      setResult(null)
+      setError(validationError)
+      return
+    }
     setLoading(true)
     setError('')
     try {
@@ -1290,6 +1349,11 @@ function CrawlerSimulation({ onRunComplete }) {
     setLoading(false)
   }
   async function run() {
+    if (!isValidWebsiteUrl(url)) {
+      setRows([])
+      setError('Enter a valid website URL.')
+      return
+    }
     setLoading(true)
     setError('')
     try {
@@ -1570,6 +1634,12 @@ function Benchmark({ onRunComplete }) {
     setError('')
   }
   async function run() {
+    const validationError = validateToolInput('benchmark', form)
+    if (validationError) {
+      setResult(null)
+      setError(validationError)
+      return
+    }
     setLoading(true)
     setError('')
     try {

@@ -831,5 +831,8 @@ th { color: #667085; text-transform: uppercase; letter-spacing: 1.1px; font-size
   .side-rail h1 { font-size: 25px; }
   .tool-head { flex-direction: column; }
   .ghost-button { width: 100%; }
-  .steps { grid-template-columns: repeat(4, minmax(100px, 1fr)); }
+  .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: hidden; }
+  .steps button { border-bottom: 1px solid var(--border); }
+  .steps button:nth-child(2n) { border-right: 0; }
+  .steps button:nth-last-child(-n+2) { border-bottom: 0; }
 }

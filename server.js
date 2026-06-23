@@ -117,6 +117,49 @@ const crawlSchema = z.object({
   url: z.string().trim().min(3).max(500),
 })
 
+function hasText(value) {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function validateToolInput(tool, input = {}) {
+  const requirements = {
+    brand: [
+      ['brand', 'Enter a brand name.'],
+      ['domain', 'Enter a domain.'],
+    ],
+    visibility: [
+      ['brand', 'Enter a brand name.'],
+      ['prompt', 'Enter a search prompt or user question.'],
+    ],
+    fanout: [
+      ['query', 'Enter a query, keyword, website, or brief to analyze.'],
+    ],
+    research: [
+      ['brand', 'Enter your brand.'],
+      ['domain', 'Enter your domain.'],
+    ],
+    landing: [
+      ['question', 'Enter the main landing page question.'],
+      ['brand', 'Enter your brand.'],
+      ['domain', 'Enter your domain.'],
+    ],
+    content: [
+      ['prompt', 'Enter the content prompt.'],
+    ],
+    benchmark: [
+      ['prompt', 'Enter the benchmark search prompt.'],
+    ],
+  }
+  if (tool === 'check' && !hasText(input.url) && !hasText(input.content)) {
+    return 'Enter a content URL or paste content to analyze.'
+  }
+  const missing = (requirements[tool] || []).find(([key]) => !hasText(input[key]))
+  if (missing) return missing[1]
+  if (tool === 'visibility' && (!Array.isArray(input.models) || !input.models.length)) return 'Select at least one AI surface.'
+  if (tool === 'fanout' && (!Array.isArray(input.surfaces) || !input.surfaces.length)) return 'Select at least one AI surface.'
+  return ''
+}
+
 function absoluteUrl(value) {
   if (!value || typeof value !== 'string') return ''
   return /^https?:\/\//i.test(value.trim()) ? value.trim() : `https://${value.trim()}`
@@ -721,6 +764,8 @@ app.post('/api/generate', requireAuth, async (req, res) => {
   const parsed = generateSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'Invalid analysis request' })
   const { tool, input } = parsed.data
+  const validationError = validateToolInput(tool, input)
+  if (validationError) return res.status(400).json({ error: validationError })
   try {
     const enrichedInput = await enrichInput(tool, input)
     const directModelChecks = tool === 'visibility' ? await directVisibilityChecks(enrichedInput) : []
@@ -752,6 +797,12 @@ app.post('/api/crawl', requireAuth, async (req, res) => {
   const parsed = crawlSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'Invalid URL' })
   const target = /^https?:\/\//i.test(parsed.data.url) ? parsed.data.url : `https://${parsed.data.url}`
+  try {
+    const parsedTarget = new URL(target)
+    if (!parsedTarget.hostname.includes('.')) throw new Error('Invalid hostname')
+  } catch {
+    return res.status(400).json({ error: 'Enter a valid website URL.' })
+  }
   const agents = {
     GPTBot: 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.1; +https://openai.com/gptbot',
     'ChatGPT-User': 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); ChatGPT-User/1.0; +https://openai.com/bot',
