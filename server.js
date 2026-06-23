@@ -62,6 +62,7 @@ app.use('/api/auth/', rateLimit({
 
 const toolInstructions = {
   brand: 'Analyze whether AI systems can identify this brand as an entity for the selected country and language. Evaluate entity clarity, third-party corroboration, sameAs/schema readiness, category ownership, answer-engine citation likelihood, and concrete fixes.',
+  visibility: 'Check whether the selected brand is likely to be visible for the user prompt across the selected AI answer engines and model surfaces. Use directModelChecks when supplied: those are live model-answer probes for supported OpenRouter models. For surfaces without direct query support, clearly mark the finding as an assessment. Return model-by-model presence, confidence, likely evidence, citation gaps, competitive pressure, and precise actions to improve inclusion.',
   fanout: 'Create a query fan-out analysis for Google AI Overview, Google AI Mode, and ChatGPT style answer engines. Expand the source prompt into realistic sub-queries grouped by intent, comparison, alternatives, pricing, trust, and implementation.',
   research: 'Generate a structured AI prompt research plan across branded, non-branded, competitor, topic, persona, SEO, and Search Console prompt types. Include monitorable prompt buckets and why each matters.',
   landing: 'Create a GEO optimized landing page plan with answer-first structure, proof sections, FAQs, comparison context, schema recommendations, and extractable answer blocks.',
@@ -81,6 +82,7 @@ Use these sections to clearly explain what is present, what is weak, and what th
 Add additional tool-specific sections after those three when useful.
 Do not invent observed facts that are not supported by the user input or live check result; state uncertainty when needed.
 For fanout also include queries array of 6-10 objects {query,intent}.
+For visibility also include models array of objects {model,presence,confidence,evidence,nextAction}. Presence should be Visible, Likely, Weak, or Not visible.
 For benchmark also include brands array of exactly 10 objects {rank,brand,share,sentiment,reason}.`
 
 const authSchema = z.object({
@@ -103,7 +105,7 @@ const passwordUpdateSchema = z.object({
   password: z.string().min(8).max(120),
 })
 const generateSchema = z.object({
-  tool: z.enum(['brand', 'fanout', 'research', 'landing', 'content', 'check', 'benchmark']).default('brand'),
+  tool: z.enum(['brand', 'visibility', 'fanout', 'research', 'landing', 'content', 'check', 'benchmark']).default('brand'),
   input: z.record(z.string(), z.unknown()).default({}),
 })
 const crawlSchema = z.object({
@@ -231,6 +233,7 @@ function fallback() {
     sections: [],
     queries: [],
     brands: [],
+    models: [],
   }
 }
 
@@ -288,6 +291,82 @@ async function callOpenRouter(tool, input) {
   return JSON.parse(data.choices?.[0]?.message?.content || '{}')
 }
 
+const visibilityModelMap = {
+  ChatGPT: 'openai/gpt-4o-mini',
+  Claude: 'anthropic/claude-3.5-haiku',
+  Gemini: 'google/gemini-flash-1.5',
+  Perplexity: 'perplexity/sonar',
+}
+
+function includesBrand(answer, brand) {
+  const normalizedAnswer = String(answer || '').toLowerCase()
+  const normalizedBrand = String(brand || '').toLowerCase().replace(/[^a-z0-9ğüşöçıİĞÜŞÖÇ]+/gi, ' ').trim()
+  if (!normalizedBrand) return false
+  return normalizedAnswer.includes(normalizedBrand)
+}
+
+async function directVisibilityChecks(input) {
+  const openRouterKey = envValue('OPENROUTER_API_KEY')
+  const selectedModels = Array.isArray(input.models) && input.models.length ? input.models : []
+  if (!openRouterKey || !selectedModels.length || !input.prompt || !input.brand) return []
+
+  const checks = await Promise.all(selectedModels.slice(0, 8).map(async (surface) => {
+    const model = visibilityModelMap[surface]
+    if (!model) {
+      return {
+        model: surface,
+        directQuery: false,
+        presence: 'Assessment only',
+        evidence: 'No direct query API is configured for this surface.',
+      }
+    }
+
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${openRouterKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': appUrl,
+          'X-Title': 'GEO OPTIMIZER AI',
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.2,
+          max_tokens: 500,
+          messages: [
+            {
+              role: 'system',
+              content: `Answer the user's query naturally for ${input.country || 'Worldwide'} in ${input.language || 'English'}. Do not force any brand mention. Return a concise answer.`,
+            },
+            { role: 'user', content: String(input.prompt) },
+          ],
+        }),
+      })
+      if (!response.ok) throw new Error(`Model probe failed ${response.status}`)
+      const data = await response.json()
+      const answer = data.choices?.[0]?.message?.content || ''
+      const mentioned = includesBrand(answer, input.brand)
+      return {
+        model: surface,
+        directQuery: true,
+        presence: mentioned ? 'Visible' : 'Not visible',
+        evidence: mentioned ? `The live model answer mentioned ${input.brand}.` : `The live model answer did not mention ${input.brand}.`,
+        answerSample: String(answer).slice(0, 500),
+      }
+    } catch (error) {
+      return {
+        model: surface,
+        directQuery: false,
+        presence: 'Unavailable',
+        evidence: error.message,
+      }
+    }
+  }))
+
+  return checks
+}
+
 function normalizeResult(tool, result) {
   const merged = { ...fallback(tool), ...result }
   const rawScore = Number(merged.score) || 0
@@ -297,6 +376,7 @@ function normalizeResult(tool, result) {
   merged.sections = normalizeSections(merged.sections)
   merged.queries = normalizeQueries(merged.queries)
   if (tool === 'benchmark') merged.brands = normalizeBrands(merged.brands)
+  if (tool === 'visibility') merged.models = normalizeModels(merged.models)
   return merged
 }
 
@@ -332,6 +412,17 @@ function normalizeBrands(brands) {
     share: typeof row.share === 'number' ? `${row.share}%` : String(row.share || `${90 - index * 5}%`),
     sentiment: typeof row.sentiment === 'number' ? (row.sentiment >= 85 ? 'Leader' : row.sentiment >= 74 ? 'Challenger' : 'Emerging') : String(row.sentiment || 'Challenger'),
     reason: String(row.reason || 'Entity strength'),
+  }))
+}
+
+function normalizeModels(models) {
+  if (!Array.isArray(models)) return []
+  return models.slice(0, 10).map((row) => ({
+    model: String(row.model || row.surface || 'AI surface'),
+    presence: String(row.presence || row.status || 'Unknown'),
+    confidence: String(row.confidence || '-'),
+    evidence: String(row.evidence || row.reason || 'No evidence supplied'),
+    nextAction: String(row.nextAction || row.action || 'Improve entity clarity and citation-ready evidence'),
   }))
 }
 
@@ -468,7 +559,10 @@ app.post('/api/generate', requireAuth, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'Invalid analysis request' })
   const { tool, input } = parsed.data
   try {
-    const raw = (await callOpenRouter(tool, input)) || (await callOpenAI(tool, input))
+    const analysisInput = tool === 'visibility'
+      ? { ...input, directModelChecks: await directVisibilityChecks(input) }
+      : input
+    const raw = (await callOpenRouter(tool, analysisInput)) || (await callOpenAI(tool, analysisInput))
     if (!raw) return res.status(503).json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' })
     const result = normalizeResult(tool, raw)
     await saveRun(req.user.id, tool, input, result)

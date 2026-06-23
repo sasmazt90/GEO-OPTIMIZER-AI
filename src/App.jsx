@@ -7,10 +7,9 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  FileCheck2,
+  Eye,
   FilePenLine,
   History,
-  LayoutTemplate,
   Loader2,
   LogOut,
   Menu,
@@ -26,15 +25,34 @@ const languages = ['English', 'Turkish', 'German', 'French', 'Spanish', 'Italian
 const countries = ['Worldwide', 'United States', 'United Kingdom', 'Turkey', 'Germany', 'France', 'Spain', 'Canada']
 
 const tools = [
-  { id: 'brand', label: 'AI Brand Entity', icon: ShieldCheck, tag: 'Entity confidence' },
-  { id: 'crawler', label: 'AI Search Crawler Simulation', icon: Bot, tag: 'Crawler access' },
-  { id: 'fanout', label: 'Query Fan Out Analysis', icon: Search, tag: 'Query expansion' },
-  { id: 'research', label: 'AI Prompt Research', icon: BrainCircuit, tag: 'Prompt universe' },
-  { id: 'landing', label: 'GEO Landing Page Creator', icon: LayoutTemplate, tag: 'Landing brief' },
-  { id: 'content', label: 'GEO Content Creator', icon: FilePenLine, tag: 'Content draft' },
-  { id: 'check', label: 'GEO Content Check', icon: FileCheck2, tag: 'Compliance scan' },
+  { id: 'brandAccess', label: 'Brand & Access', icon: ShieldCheck, tag: 'Entity and crawler readiness' },
+  { id: 'visibility', label: 'AI Visibility Check', icon: Eye, tag: 'Model presence by query' },
+  { id: 'fanout', label: 'Query Intelligence', icon: Search, tag: 'Query expansion' },
+  { id: 'research', label: 'Prompt Research', icon: BrainCircuit, tag: 'Prompt universe' },
+  { id: 'contentStudio', label: 'Content Studio', icon: FilePenLine, tag: 'Create and audit GEO content' },
   { id: 'benchmark', label: 'Benchmark', icon: BarChart3, tag: 'Top brands' },
 ]
+
+const toolDescriptions = {
+  brand: 'Checks whether a brand is clearly recognized as an entity by AI systems. It reviews brand name, domain, country, and language to assess entity clarity, trust signals, schema/sameAs needs, and concrete improvement actions.',
+  crawler: 'Tests whether the website responds successfully to AI crawler user-agents such as GPTBot, ChatGPT-User, OAI-SearchBot, Googlebot, PerplexityBot, ClaudeBot, and others.',
+  visibility: 'Checks whether a selected brand is likely to appear for a specific prompt across AI answer engines and model surfaces. It returns model-by-model presence, confidence, evidence gaps, and actions to improve visibility.',
+  fanout: 'Analyzes how an AI search system may expand one query into related sub-queries, comparisons, alternatives, research intents, pricing questions, and implementation paths.',
+  research: 'Creates monitorable AI search prompt sets for brand visibility, including brand, competitor, topic, persona, SEO keyword, and Search Console prompt categories.',
+  landing: 'Creates an answer-first GEO landing page structure with page blocks, FAQs, proof sections, comparison context, schema recommendations, and extractable answer snippets.',
+  content: 'Creates GEO/LLMO-ready content or a content brief based on prompts, URLs, brand context, content type, and target length so AI systems can extract clear answers.',
+  check: 'Reviews an existing URL or pasted content for GEO compliance. It scores answerability, entity clarity, evidence, structure, schema, freshness, and extraction quality.',
+  benchmark: 'Ranks the top 10 brands likely to appear for a prompt in the selected country and language using likely AI visibility, topical authority, citation footprint, and sentiment.',
+}
+
+const groupDescriptions = {
+  brandAccess: 'Run brand entity checks and AI crawler access simulations from one place.',
+  visibility: toolDescriptions.visibility,
+  fanout: toolDescriptions.fanout,
+  research: toolDescriptions.research,
+  contentStudio: 'Create GEO landing pages and content, then audit existing pages for AI answer readiness.',
+  benchmark: toolDescriptions.benchmark,
+}
 
 const promptModes = ['Your brand', 'SEO keywords', 'A website', 'Advanced', 'Query Fan Out']
 const crawlers = ['GPTBot', 'ChatGPT-User', 'OAI-SearchBot', 'Googlebot', 'GoogleOther', 'PerplexityBot', 'ClaudeBot', 'Grok']
@@ -47,6 +65,7 @@ const fanoutModeHelp = {
 }
 const resultPlaceholders = {
   brand: 'Enter a brand, domain, country, and language to check entity clarity across AI answer surfaces.',
+  visibility: 'Enter a brand and prompt to check likely presence across AI answer engines and model surfaces.',
   fanout: 'Enter a prompt and select a mode to see how AI search systems may expand it into related sub-queries.',
   research: 'Complete the research inputs to generate a monitoring prompt set for brand, competitor, persona, topic, and SEO visibility.',
   landing: 'Fill in the landing page brief to generate an answer-first GEO page structure.',
@@ -54,6 +73,8 @@ const resultPlaceholders = {
   check: 'Paste content or add a URL to receive a GEO compliance review.',
   benchmark: 'Enter a prompt, country, and language to rank likely visible brands.',
 }
+
+const visibilityModels = ['ChatGPT', 'Google AI Overview', 'Google AI Mode', 'Perplexity', 'Claude', 'Gemini', 'Microsoft Copilot']
 
 async function callApi(payload) {
   const response = await fetch('/api/generate', {
@@ -70,7 +91,7 @@ async function callApi(payload) {
 }
 
 function App() {
-  const [activeTool, setActiveTool] = useState('brand')
+  const [activeTool, setActiveTool] = useState('brandAccess')
   const [mobileNav, setMobileNav] = useState(false)
   const [navCollapsed, setNavCollapsed] = useState(false)
   const [legalPage, setLegalPage] = useState('')
@@ -79,7 +100,7 @@ function App() {
   const [user, setUser] = useState(null)
   const [runs, setRuns] = useState([])
   const [recoveryToken, setRecoveryToken] = useState('')
-  const active = tools.find((tool) => tool.id === activeTool)
+  const active = tools.find((tool) => tool.id === activeTool) || tools[0]
 
   async function loadRuns() {
     const response = await fetch('/api/runs', { credentials: 'include' })
@@ -211,7 +232,7 @@ function App() {
             <div><History size={15} /><strong>Recent runs</strong></div>
             {runs.length === 0 && <p>No saved runs yet.</p>}
             {runs.slice(0, 5).map((run) => (
-              <button key={run.id} onClick={() => { setActiveTool(run.type === 'crawler' ? 'crawler' : run.type); setAccountPage(false) }}>
+              <button key={run.id} onClick={() => { setActiveTool(primaryToolForRun(run.type)); setAccountPage(false) }}>
                 <span>{run.type}</span>
                 <small>{new Date(run.createdAt).toLocaleDateString()}</small>
               </button>
@@ -223,6 +244,7 @@ function App() {
             <h1>{accountPage ? 'Account Settings' : active.label}</h1>
             <p>{accountPage ? 'Manage your profile and sign-in details' : active.tag}</p>
           </div>
+          {!accountPage && <ToolIntro>{groupDescriptions[activeTool]}</ToolIntro>}
           {accountPage ? (
             <AccountSettings user={user} onBack={() => setAccountPage(false)} onUpdated={setUser} />
           ) : (
@@ -486,14 +508,35 @@ function AuthScreen({ onAuthed, recoveryToken, onPasswordUpdated }) {
   )
 }
 
+function primaryToolForRun(type) {
+  if (type === 'brand' || type === 'crawler') return 'brandAccess'
+  if (type === 'landing' || type === 'content' || type === 'check') return 'contentStudio'
+  if (type === 'visibility') return 'visibility'
+  return tools.some((tool) => tool.id === type) ? type : 'brandAccess'
+}
+
+function ToolIntro({ children }) {
+  return <p className="tool-description">{children}</p>
+}
+
+function SubToolSwitch({ value, onChange, options }) {
+  return (
+    <div className="mode-row subtool-row">
+      {options.map((option) => (
+        <button key={option.id} className={value === option.id ? 'active' : ''} onClick={() => onChange(option.id)}>
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function ToolRouter({ activeTool, onRunComplete }) {
-  if (activeTool === 'brand') return <BrandEntity onRunComplete={onRunComplete} />
-  if (activeTool === 'crawler') return <CrawlerSimulation onRunComplete={onRunComplete} />
+  if (activeTool === 'brandAccess') return <BrandAccess onRunComplete={onRunComplete} />
+  if (activeTool === 'visibility') return <VisibilityCheck onRunComplete={onRunComplete} />
   if (activeTool === 'fanout') return <FanOut onRunComplete={onRunComplete} />
   if (activeTool === 'research') return <PromptResearch onRunComplete={onRunComplete} />
-  if (activeTool === 'landing') return <LandingCreator onRunComplete={onRunComplete} />
-  if (activeTool === 'content') return <ContentCreator onRunComplete={onRunComplete} />
-  if (activeTool === 'check') return <ContentCheck onRunComplete={onRunComplete} />
+  if (activeTool === 'contentStudio') return <ContentStudio onRunComplete={onRunComplete} />
   return <Benchmark onRunComplete={onRunComplete} />
 }
 
@@ -504,6 +547,16 @@ function Field({ label, children, hint, required }) {
       {children}
       {hint && <em>{hint}</em>}
     </label>
+  )
+}
+
+function FieldGroup({ label, children, hint, required }) {
+  return (
+    <div className="field">
+      <span>{label} {required && <b>Required</b>}</span>
+      {children}
+      {hint && <em>{hint}</em>}
+    </div>
   )
 }
 
@@ -688,6 +741,18 @@ function ToolSpecificResult({ toolId, data }) {
     )
   }
 
+  if (toolId === 'visibility') {
+    return (
+      <>
+        <MetricGrid metrics={metrics} />
+        <StatusBoard sections={statusSections} />
+        <ModelPresenceTable rows={data.models || []} />
+        <ResultSections sections={detailSections} />
+        <ul className="recommendations">{bullets.map((item) => <li key={item}><CheckCircle2 size={16} />{item}</li>)}</ul>
+      </>
+    )
+  }
+
   return (
     <>
       <MetricGrid metrics={metrics} />
@@ -695,6 +760,30 @@ function ToolSpecificResult({ toolId, data }) {
       <ResultSections sections={detailSections} />
       <ul className="recommendations">{bullets.map((item) => <li key={item}><CheckCircle2 size={16} />{item}</li>)}</ul>
     </>
+  )
+}
+
+function ModelPresenceTable({ rows }) {
+  if (!Array.isArray(rows) || !rows.length) return null
+  return (
+    <ResultSection title="Model presence by surface">
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>AI Surface</th><th>Presence</th><th>Confidence</th><th>Evidence / Gap</th><th>Next Action</th></tr></thead>
+          <tbody>
+            {rows.slice(0, 10).map((row) => (
+              <tr key={row.model || row.surface}>
+                <td>{row.model || row.surface}</td>
+                <td><span className="status-pill">{row.presence || row.status || 'Unknown'}</span></td>
+                <td>{row.confidence || '-'}</td>
+                <td>{row.evidence || row.reason || '-'}</td>
+                <td>{row.nextAction || row.action || '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </ResultSection>
   )
 }
 
@@ -831,6 +920,24 @@ function useAiTool(toolId, onRunComplete) {
   return { loading, result, error, run, reset }
 }
 
+function BrandAccess({ onRunComplete }) {
+  const [mode, setMode] = useState('brand')
+  return (
+    <>
+      <SubToolSwitch
+        value={mode}
+        onChange={setMode}
+        options={[
+          { id: 'brand', label: 'Brand Entity' },
+          { id: 'crawler', label: 'Crawler Simulation' },
+        ]}
+      />
+      <p className="info-box">{mode === 'brand' ? toolDescriptions.brand : toolDescriptions.crawler}</p>
+      {mode === 'brand' ? <BrandEntity onRunComplete={onRunComplete} /> : <CrawlerSimulation onRunComplete={onRunComplete} />}
+    </>
+  )
+}
+
 function BrandEntity({ onRunComplete }) {
   const emptyForm = { brand: '', domain: '', country: 'Worldwide', language: 'English' }
   const [form, setForm] = useState(emptyForm)
@@ -847,6 +954,52 @@ function BrandEntity({ onRunComplete }) {
         <Field label="Country"><SelectField value={form.country} onChange={(country) => setForm({ ...form, country })} options={countries} /></Field>
         <Field label="Language"><SelectField value={form.language} onChange={(language) => setForm({ ...form, language })} options={languages} /></Field>
       </div>
+    </ToolFrame>
+  )
+}
+
+function VisibilityCheck({ onRunComplete }) {
+  const emptyForm = {
+    brand: '',
+    domain: '',
+    prompt: '',
+    country: 'Worldwide',
+    language: 'English',
+    models: visibilityModels,
+  }
+  const [form, setForm] = useState(emptyForm)
+  const { loading, result, error, run, reset } = useAiTool('visibility', onRunComplete)
+  const resetTool = () => {
+    reset()
+    setForm(emptyForm)
+  }
+  function toggleModel(model) {
+    const nextModels = form.models.includes(model)
+      ? form.models.filter((item) => item !== model)
+      : [...form.models, model]
+    setForm({ ...form, models: nextModels.length ? nextModels : [model] })
+  }
+  return (
+    <ToolFrame toolId="visibility" title="Check AI model presence" badge="Model-by-model visibility" result={result} loading={loading} error={error} onRun={() => run(form)} onReset={resetTool} action="Check Model Presence" newAction="New Visibility Check">
+      <div className="two-col">
+        <Field label="Brand name" required><input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder="e.g. Bioderma, Stripe, Acme" /></Field>
+        <Field label="Domain"><input value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })} placeholder="https://example.com" /></Field>
+      </div>
+      <Field label="Search prompt or user question" required><textarea value={form.prompt} onChange={(e) => setForm({ ...form, prompt: e.target.value })} placeholder="e.g. Best dermatology brands for sensitive skin in Turkey" /></Field>
+      <div className="two-col">
+        <Field label="Country"><SelectField value={form.country} onChange={(country) => setForm({ ...form, country })} options={countries} /></Field>
+        <Field label="Language"><SelectField value={form.language} onChange={(language) => setForm({ ...form, language })} options={languages} /></Field>
+      </div>
+      <FieldGroup label="AI surfaces to check">
+        <div className="check-list compact model-list">
+          {visibilityModels.map((model) => (
+            <label key={model}>
+              <input type="checkbox" checked={form.models.includes(model)} onChange={() => toggleModel(model)} />
+              {model}
+            </label>
+          ))}
+        </div>
+      </FieldGroup>
     </ToolFrame>
   )
 }
@@ -908,6 +1061,27 @@ function CrawlerSimulation({ onRunComplete }) {
           <HowItWorks />
         </>
       )}
+    </>
+  )
+}
+
+function ContentStudio({ onRunComplete }) {
+  const [mode, setMode] = useState('check')
+  return (
+    <>
+      <SubToolSwitch
+        value={mode}
+        onChange={setMode}
+        options={[
+          { id: 'check', label: 'Content Check' },
+          { id: 'content', label: 'Content Creator' },
+          { id: 'landing', label: 'Landing Page Creator' },
+        ]}
+      />
+      <p className="info-box">{toolDescriptions[mode]}</p>
+      {mode === 'check' && <ContentCheck onRunComplete={onRunComplete} />}
+      {mode === 'content' && <ContentCreator onRunComplete={onRunComplete} />}
+      {mode === 'landing' && <LandingCreator onRunComplete={onRunComplete} />}
     </>
   )
 }
