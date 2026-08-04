@@ -664,27 +664,6 @@ function AuthScreen({ onAuthed, recoveryToken, onPasswordUpdated }) {
     }
   }
 
-  async function resendConfirmation() {
-    setLoading(true)
-    setError('')
-    setMessage('')
-    try {
-      const response = await fetch('/api/auth/resend-confirmation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email: form.email }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Could not resend confirmation email')
-      setMessage(data.message || 'Confirmation email sent.')
-    } catch (authError) {
-      setError(authError.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const title = {
     login: 'Sign in to your workspace',
     register: 'Create your account',
@@ -712,7 +691,6 @@ function AuthScreen({ onAuthed, recoveryToken, onPasswordUpdated }) {
         {mode === 'login' && <button className="text-button" onClick={() => setMode('register')}>Create a new account</button>}
         {mode === 'login' && <button className="text-button secondary" onClick={() => setMode('forgot')}>Forgot password?</button>}
         {mode === 'register' && <button className="text-button" onClick={() => setMode('login')}>I already have an account</button>}
-        {mode === 'register' && <button className="text-button secondary" disabled={!form.email || loading} onClick={resendConfirmation}>Resend confirmation email</button>}
         {(mode === 'forgot' || mode === 'reset') && <button className="text-button" onClick={() => { setMode('login'); onPasswordUpdated?.() }}>Back to sign in</button>}
       </section>
     </main>

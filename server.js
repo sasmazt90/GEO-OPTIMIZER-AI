@@ -638,24 +638,30 @@ app.post('/api/auth/register', async (req, res) => {
   const parsed = authSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'Invalid registration details' })
   const email = parsed.data.email.toLowerCase()
-  const { data, error } = await supabaseAuth.auth.signUp({
+  const { data, error } = await supabaseAdmin.auth.admin.createUser({
     email,
     password: parsed.data.password,
-    options: {
-      data: { name: parsed.data.name || email.split('@')[0] },
-      emailRedirectTo: `${appUrl}/auth/callback`,
-    },
+    email_confirm: true,
+    user_metadata: { name: parsed.data.name || email.split('@')[0] },
   })
-  if (error) return res.status(400).json({ error: error.message })
-  if (data.user) await upsertProfile(data.user, parsed.data.name)
-  if (data.session) {
-    setAuthCookies(res, data.session)
-    return res.status(201).json({ user: publicUser(data.user, await getProfile(data.user.id)) })
+  if (error) {
+    const status = error.message?.toLowerCase().includes('already') ? 409 : 400
+    return res.status(status).json({ error: error.message })
   }
-  res.status(201).json({
-    pendingConfirmation: true,
-    message: 'Check your email to confirm your account before signing in.',
+  if (!data.user) return res.status(400).json({ error: 'Could not create account' })
+  await upsertProfile(data.user, parsed.data.name)
+  const { data: sessionData, error: sessionError } = await supabaseAuth.auth.signInWithPassword({
+    email,
+    password: parsed.data.password,
   })
+  if (sessionError || !sessionData.session || !sessionData.user) {
+    return res.status(201).json({
+      message: 'Account created. Please sign in.',
+      user: publicUser(data.user, await getProfile(data.user.id)),
+    })
+  }
+  setAuthCookies(res, sessionData.session)
+  res.status(201).json({ user: publicUser(sessionData.user, await getProfile(sessionData.user.id)) })
 })
 
 app.post('/api/auth/login', async (req, res) => {
