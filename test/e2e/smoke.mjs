@@ -38,6 +38,14 @@ try {
   await page.getByText('Brands in order:').waitFor()
   await page.screenshot({ path: `${out}/tracking-insights.png`, fullPage: true })
 
+  // Schedule: save a weekly run and send a test email.
+  await page.locator('section.panel', { hasText: 'Measure this project automatically' }).locator('select').first().selectOption('weekly')
+  await page.getByRole('button', { name: 'Save schedule' }).click()
+  await page.getByText('Schedule saved.').waitFor()
+  await page.getByRole('button', { name: 'Send test email' }).click()
+  await page.getByText('Test email sent to demo@example.com.').waitFor()
+  await page.locator('section.panel', { hasText: 'Measure this project automatically' }).screenshot({ path: `${out}/schedule.png` })
+
   // AI bot traffic from an access log.
   await page.getByRole('button', { name: 'AI Bot Traffic' }).first().click()
   const log = Array.from({ length: 40 }, (_, index) => `20.0.0.1 - - [${String(10 + (index % 3)).padStart(2, '0')}/Nov/2026:10:00:00 +0000] "GET /page-${index % 4} HTTP/1.1" ${index % 9 === 0 ? 403 : 200} 100 "-" "Mozilla/5.0; compatible; ${index % 2 ? 'GPTBot/1.1' : 'PerplexityBot/1.0'}"`).join('\n')

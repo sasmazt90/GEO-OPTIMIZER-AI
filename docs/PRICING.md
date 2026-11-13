@@ -52,6 +52,7 @@ Hosting and database are not per-user costs: roughly $20 per month for a commerc
 
 ## Guard rails
 
+- Scheduled measurements use the same answer credits as manual runs and are skipped once the allowance is used up. The Free plan can schedule weekly runs only.
 - Allowances are monthly, not daily, so the worst case per subscriber is bounded.
 - Web-grounded answers consume 4 credits.
 - A free account can cost at most about $0.57 per month.

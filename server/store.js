@@ -44,6 +44,16 @@ const crawlPageOut = (row) => ({ id: row.id, url: row.url, depth: row.depth, sou
 const auditOut = (row) => row && ({ id: row.id, url: row.url, host: row.host, score: row.score, counts: row.counts || {}, checks: row.checks || [], rendered: Boolean(row.rendered), createdAt: row.created_at })
 const keywordOut = (row) => ({ id: row.id, siteUrl: row.site_url, query: row.query, createdAt: row.created_at })
 const PAGE_SIZE = 1000
+const scheduleOut = (row) => row && ({
+  projectId: row.project_id, userId: row.user_id, frequency: row.frequency, surfaces: row.surfaces || [], samples: row.samples, grounded: Boolean(row.grounded),
+  notify: row.notify, threshold: row.threshold, nextRunAt: row.next_run_at, lastRunAt: row.last_run_at, measurementId: row.measurement_id || null, lastStatus: row.last_status || '',
+})
+const scheduleIn = (patch) => {
+  const map = { frequency: 'frequency', surfaces: 'surfaces', samples: 'samples', grounded: 'grounded', notify: 'notify', threshold: 'threshold', nextRunAt: 'next_run_at', lastRunAt: 'last_run_at', measurementId: 'measurement_id', lastStatus: 'last_status' }
+  const row = { updated_at: new Date().toISOString() }
+  for (const [key, column] of Object.entries(map)) if (key in patch) row[column] = patch[key]
+  return row
+}
 
 export function createSupabaseStore(db) {
   // PostgREST returns at most 1000 rows per request, so large reads are paged.
@@ -253,6 +263,22 @@ export function createSupabaseStore(db) {
       return (await allRows(() => db.from('geo_app_crawl_pages').select('id,url,depth,source,found_on,linked,status,result').eq('crawl_id', crawlId).order('id'))).map(crawlPageOut)
     },
 
+    async getSchedule(userId, projectId) {
+      return scheduleOut(unwrap(await db.from('geo_app_schedules').select('*').eq('user_id', userId).eq('project_id', projectId).maybeSingle()))
+    },
+    async saveSchedule(userId, projectId, patch) {
+      return scheduleOut(unwrap(await db.from('geo_app_schedules').upsert({ project_id: projectId, user_id: userId, ...scheduleIn(patch) }, { onConflict: 'project_id' }).select('*').single()))
+    },
+    async updateSchedule(projectId, patch) {
+      unwrap(await db.from('geo_app_schedules').update(scheduleIn(patch)).eq('project_id', projectId))
+    },
+    async listDueSchedules(nowIso, limit = 25) {
+      return unwrap(await db.from('geo_app_schedules').select('*').neq('frequency', 'off').is('measurement_id', null).lte('next_run_at', nowIso).order('next_run_at').limit(limit)).map(scheduleOut)
+    },
+    async listActiveSchedules(limit = 50) {
+      return unwrap(await db.from('geo_app_schedules').select('*').not('measurement_id', 'is', null).order('last_run_at').limit(limit)).map(scheduleOut)
+    },
+
     async saveAudit(userId, audit) {
       const row = { id: nanoid(), user_id: userId, url: audit.url, host: audit.host, score: audit.score, counts: audit.counts, checks: audit.checks, rendered: Boolean(audit.rendered) }
       return auditOut(unwrap(await db.from('geo_app_audits').insert(row).select('*').single()))
@@ -269,7 +295,7 @@ export function createSupabaseStore(db) {
 }
 
 export function createMemoryStore() {
-  const state = { profiles: new Map(), runs: [], usage: new Map(), projects: [], prompts: [], measurements: [], samples: [], gsc: new Map(), keywords: [], crawls: [], crawlPages: [], audits: [] }
+  const state = { profiles: new Map(), runs: [], usage: new Map(), projects: [], prompts: [], measurements: [], samples: [], gsc: new Map(), keywords: [], crawls: [], crawlPages: [], audits: [], schedules: new Map() }
   const now = () => new Date().toISOString()
   return {
     state,
@@ -396,6 +422,21 @@ export function createMemoryStore() {
       state.crawlPages.filter((page) => page.crawlId === crawlId && ['pending', 'running'].includes(page.status)).forEach((page) => { page.status = 'skipped' })
     },
     async listCrawlPages(crawlId) { return state.crawlPages.filter((page) => page.crawlId === crawlId) },
+
+    async getSchedule(userId, projectId) {
+      const schedule = state.schedules.get(projectId)
+      return schedule && schedule.userId === userId ? schedule : null
+    },
+    async saveSchedule(userId, projectId, patch) {
+      const schedule = { projectId, userId, frequency: 'off', surfaces: [], samples: 1, grounded: false, notify: 'change', threshold: 5, nextRunAt: null, lastRunAt: null, measurementId: null, lastStatus: '', ...state.schedules.get(projectId), ...patch }
+      state.schedules.set(projectId, schedule)
+      return schedule
+    },
+    async updateSchedule(projectId, patch) { Object.assign(state.schedules.get(projectId), patch) },
+    async listDueSchedules(nowIso, limit = 25) {
+      return [...state.schedules.values()].filter((item) => item.frequency !== 'off' && !item.measurementId && item.nextRunAt && item.nextRunAt <= nowIso).slice(0, limit)
+    },
+    async listActiveSchedules(limit = 50) { return [...state.schedules.values()].filter((item) => item.measurementId).slice(0, limit) },
 
     async saveAudit(userId, audit) {
       const row = { id: nanoid(), userId, ...audit, rendered: Boolean(audit.rendered), createdAt: new Date(Date.now() + state.audits.length).toISOString() }

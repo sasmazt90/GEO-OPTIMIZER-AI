@@ -6,6 +6,7 @@ import { createApp } from './server/app.js'
 import { createBilling, createStripeClient } from './server/billing.js'
 import { createGsc, createTokenBox } from './server/gsc.js'
 import { createLlm } from './server/llm.js'
+import { createMailer } from './server/mail.js'
 import { createSafeFetch } from './server/net.js'
 import { createRenderer } from './server/render.js'
 import { createMemoryStore, createSupabaseStore } from './server/store.js'
@@ -42,6 +43,8 @@ const app = createApp({
   gsc: createGsc({ clientId: envValue('GOOGLE_CLIENT_ID'), clientSecret: envValue('GOOGLE_CLIENT_SECRET'), redirectUri: `${appUrl}/api/gsc/callback` }),
   // Refresh tokens are encrypted at rest with a key derived from this secret.
   tokenBox: createTokenBox(envValue('TOKEN_ENCRYPTION_KEY') || envValue('JWT_SECRET') || supabaseSecretKey),
+  // SMTP for scheduled measurement reports (IONOS: smtp.ionos.de, port 587).
+  mailer: createMailer({ host: envValue('SMTP_HOST'), port: envValue('SMTP_PORT', '587'), user: envValue('SMTP_USER'), pass: envValue('SMTP_PASS'), from: envValue('MAIL_FROM') }),
   vitals: createVitals({ apiKey: envValue('PAGESPEED_API_KEY') }),
   renderer: envValue('RENDER_DISABLED') === 'true' ? null : createRenderer(),
   supabaseAdmin,
@@ -51,6 +54,10 @@ const app = createApp({
     appUrl,
     adminEmails: envValue('ADMIN_EMAILS').split(',').map((email) => email.trim().toLowerCase()).filter(Boolean),
     staticDir: isProduction && !process.env.VERCEL ? path.join(__dirname, 'dist') : null,
+    // The daily cron authenticates with CRON_SECRET and continues unfinished runs by calling itself.
+    cronSecret: envValue('CRON_SECRET'),
+    selfUrl: appUrl,
+    cronBudgetMs: process.env.VERCEL ? 220_000 : 45_000,
   },
 })
 

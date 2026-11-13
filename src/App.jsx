@@ -1774,6 +1774,7 @@ const legalContent = {
           'We process account data such as email address and name, authentication data handled by Supabase Auth, and the prompts, URLs, settings, and generated results you save in your workspace.',
           'If you subscribe to a paid plan, payment is handled by Stripe. We receive your plan, subscription status, and a customer reference from Stripe; we do not receive or store your full card details.',
           'If you connect Google Search Console, we store an encrypted access token for your Google account and read search performance data (queries, pages, clicks, impressions, and positions) for the properties you select. Access is read-only, and the keywords you choose to track are saved in your workspace.',
+          'If you switch on scheduled measurements, we send the result reports to your account email address through our email provider (IONOS).',
           'We also process technical data such as IP address, request metadata, and security logs through our hosting and infrastructure providers.',
         ],
       },

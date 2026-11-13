@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Download, Loader2, Play, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import { api } from '../api.js'
+import Schedule from './Schedule.jsx'
 import { Field, Kpi, Notice, Select } from './shared.jsx'
 import { COUNTRIES, LANGUAGES, downloadCsv } from './util.js'
 
@@ -433,6 +434,8 @@ export default function Tracking({ account, onUsage }) {
           )}
         </section>
       </div>
+
+      <Schedule key={project.id} projectId={project.id} account={account} promptCount={prompts.length} />
 
       {latest ? (
         <>

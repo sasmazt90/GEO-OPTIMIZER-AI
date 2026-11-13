@@ -6,6 +6,7 @@ import { createApp } from '../../server/app.js'
 import { createSafeFetch } from '../../server/net.js'
 import { createMemoryStore } from '../../server/store.js'
 import { createGsc, createTokenBox } from '../../server/gsc.js'
+import { createMailer } from '../../server/mail.js'
 import { createVitals } from '../../server/vitals.js'
 import { PSI_SAMPLE, fakeFetchImpl, fakeGoogle, fakeLlm } from '../helpers.js'
 
@@ -25,9 +26,10 @@ const app = createApp({
   authenticate: async () => user,
   gsc: createGsc({ clientId: 'id', clientSecret: 'secret', redirectUri: 'http://localhost/api/gsc/callback', fetchImpl: fakeGoogle().fetchImpl }),
   tokenBox,
+  mailer: createMailer({ transport: { sendMail: async (message) => { console.error(`mail to ${message.to}: ${message.subject}`); return {} } } }),
   vitals: createVitals({ fetchImpl: async () => new Response(JSON.stringify(PSI_SAMPLE)) }),
   renderer: { render: async (url) => ({ ok: true, url, status: 200, ms: 640, requests: 9, failedRequests: [], consoleErrors: [], blockedRequests: 0, html: '<html lang="en"><head><title>Acme CRM for mid-market sales teams</title></head><body><main><h1>CRM for mid-market sales teams</h1><p>' + 'rendered text '.repeat(700) + '</p><a href="/pricing">Pricing</a></main></body></html>' }) },
-  config: { rateLimit: false, isProduction: false, staticDir: path.join(root, 'dist'), batchSize: 6 },
+  config: { rateLimit: false, isProduction: false, staticDir: path.join(root, 'dist'), batchSize: 6, cronSecret: 'preview-cron' },
 })
 const port = Number(process.env.PORT || 4179)
 app.listen(port, '127.0.0.1', () => console.log(`preview on http://127.0.0.1:${port}`))

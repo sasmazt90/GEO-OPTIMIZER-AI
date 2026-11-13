@@ -7,6 +7,7 @@ SEO and generative engine optimization (GEO) platform. It measures how often AI 
 | Module | What it does | How the result is produced |
 | --- | --- | --- |
 | Visibility Tracking | Projects, tracked prompts, measurement runs, trend, share of voice, cited sources, citation gap, brand perception, per-prompt content briefs, pasted-answer check for surfaces without an API, CSV export | Every prompt is asked live on each selected model 1 to 5 times; mentions are counted in code. Rates carry a 95% Wilson interval. |
+| Scheduled measurements | Daily or weekly runs per project with an email report (always, or only when visibility changes) | A daily Vercel cron starts due runs and processes them in batches; the email states the counted rates and whether the change exceeds the margin of error |
 | AI Bot Traffic | Which AI and search crawlers visit the site, how often, which pages, error rates | Parsed in the browser from uploaded access logs (combined format or JSON lines, .gz supported); nothing is uploaded |
 | Site Audit | 30+ checks: crawl access, indexability, on-page SEO, JSON-LD, content extractability, performance | Rule-based on the raw HTML, robots.txt and sitemap. Same page, same score. No model involved. |
 | Search Console | Clicks, impressions, CTR and position with period comparison; rank tracking for chosen keywords; keyword opportunities (striking distance, low CTR, competing pages, question queries) | Google Search Console API, read-only. CTR benchmarks are the site's own medians; no third-party keyword data |
@@ -46,18 +47,19 @@ npm run lint
 
 ## Deploying
 
-1. Apply `supabase/migrations/*.sql` in order. `20261113000100_platform_v2.sql` and `20261113000200_seo_suite.sql` are additive. Without the SEO suite migration, Search Console, site crawls and audit history report a pending migration; everything else keeps working.
+1. Apply `supabase/migrations/*.sql` in order. `20261113000100_platform_v2.sql`, `20261113000200_seo_suite.sql` and `20261113000300_schedules.sql` are additive. Without the SEO suite migration, Search Console, site crawls and audit history report a pending migration; everything else keeps working.
    Until the platform v2 migration is applied, the existing tools keep working; tracking returns a "migration pending" message and usage is not metered.
 2. Set the environment variables from `.env.example`.
 3. Stripe: create one Product per paid plan with prices that have the lookup keys `geo_pro_monthly`, `geo_pro_yearly`, `geo_agency_monthly`, `geo_agency_yearly`. Add a webhook endpoint at `/api/stripe/webhook` for the events listed in `WEBHOOK_EVENTS` (`server/billing.js`) and store its signing secret as `STRIPE_WEBHOOK_SECRET`. Save the customer portal settings once in the Stripe Dashboard.
 4. Search Console (optional): in Google Cloud enable the Search Console API, create an OAuth web client with the redirect URI `APP_URL/api/gsc/callback` and the scope `webmasters.readonly`, then set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Until Google verifies the app, only test users added on the consent screen can connect.
-5. Deploy. `vercel.json` routes `/api/*` to the Express app and sets a 60 second function limit.
+5. Scheduled measurements (optional): set `CRON_SECRET` and the `SMTP_*` variables. `vercel.json` registers a daily cron at 05:00 UTC.
+6. Deploy. `vercel.json` routes `/api/*` to the Express app and sets a 300 second function limit.
 
 ## Layout
 
 ```
-server/      app.js (routes), seo.js (SEO suite routes), gsc.js, crawl.js, vitals.js, schema.js, render.js, compare.js, audit.js, html.js, robots.js, net.js, measure.js, mentions.js, llm.js, billing.js, plans.js, store.js
+server/      app.js (routes), seo.js (SEO suite routes), schedule.js, mail.js, gsc.js, crawl.js, vitals.js, schema.js, render.js, compare.js, audit.js, html.js, robots.js, net.js, measure.js, mentions.js, llm.js, billing.js, plans.js, store.js
 src/         App.jsx (shell and analysis tools), modules/ (Tracking, SiteAudit, SearchConsole, SiteCrawl, WebVitals, SchemaMarkup, PageCompare, BotTraffic, Plans)
 supabase/    migrations
-test/        unit.test.js, api.test.js, seo.test.js, e2e/
+test/        unit.test.js, api.test.js, seo.test.js, schedule.test.js, e2e/
 ```

@@ -3,7 +3,7 @@
   "outputDirectory": "dist",
   "functions": {
     "api/index.js": {
-      "maxDuration": 60,
+      "maxDuration": 300,
       "includeFiles": "node_modules/@sparticuz/chromium/bin/**"
     }
   },
@@ -15,6 +15,12 @@
     {
       "source": "/((?!og\\.png|robots\\.txt|sitemap\\.xml|llms\\.txt|favicon\\.svg|icons\\.svg|assets/).*)",
       "destination": "/index.html"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/daily",
+      "schedule": "0 5 * * *"
     }
   ]
 }

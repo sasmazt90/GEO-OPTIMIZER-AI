@@ -13,6 +13,7 @@ import { BlockedUrlError, assertPublicUrl, normalizeUrl } from './net.js'
 import { GROUNDED_MULTIPLIER, PAID_PLANS, PLANS, QuotaError, consume, currentPeriod, nextReset, resolvePlan } from './plans.js'
 import { compareRender } from './render.js'
 import { AI_BOTS, evaluateRobots, parseRobots } from './robots.js'
+import { registerScheduleRoutes } from './schedule.js'
 import { handleSeoError, registerSeoRoutes } from './seo.js'
 import { MigrationPendingError } from './store.js'
 
@@ -113,7 +114,7 @@ function normalizeResult(tool, result) {
   return merged
 }
 
-export function createApp({ store, llm, fetcher, billing = null, supabaseAdmin = null, supabaseAuth = null, authenticate = null, gsc = null, tokenBox = null, vitals = null, renderer = null, config = {} }) {
+export function createApp({ store, llm, fetcher, billing = null, supabaseAdmin = null, supabaseAuth = null, authenticate = null, gsc = null, tokenBox = null, vitals = null, renderer = null, mailer = null, config = {} }) {
   const app = express()
   const isProduction = config.isProduction ?? process.env.NODE_ENV === 'production'
   const appUrl = config.appUrl || 'http://localhost:5173'
@@ -356,7 +357,7 @@ export function createApp({ store, llm, fetcher, billing = null, supabaseAdmin =
 
   // ---------- routes ----------
   app.get('/api/health', (req, res) => {
-    res.json({ ok: true, service: 'GEO OPTIMIZER AI', version: 2, auth: supabaseAuth ? 'supabase' : 'custom', models: llm.available(), probes: llm.canProbe(), billing: Boolean(billing?.enabled), searchConsole: Boolean(gsc?.enabled && tokenBox), render: Boolean(renderer), time: new Date().toISOString() })
+    res.json({ ok: true, service: 'GEO OPTIMIZER AI', version: 2, auth: supabaseAuth ? 'supabase' : 'custom', models: llm.available(), probes: llm.canProbe(), billing: Boolean(billing?.enabled), searchConsole: Boolean(gsc?.enabled && tokenBox), render: Boolean(renderer), email: Boolean(mailer?.enabled), schedules: Boolean(config.cronSecret), time: new Date().toISOString() })
   })
 
   app.post('/api/auth/register', requireAuthClients, async (req, res) => {
@@ -733,6 +734,7 @@ export function createApp({ store, llm, fetcher, billing = null, supabaseAdmin =
     res.json({ ...progress, total: measurement.total })
   })
 
+  registerScheduleRoutes(app, { store, llm, mailer, requireAuth, config: { ...config, appUrl, adminEmails } })
   registerSeoRoutes(app, { store, fetcher, requireAuth, gsc, tokenBox, vitals, config: { ...config, appUrl, isProduction } })
 
   app.use('/api/', (req, res) => res.status(404).json({ error: 'Not found' }))
