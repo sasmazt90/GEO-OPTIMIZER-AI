@@ -283,3 +283,28 @@ test('billing: checkout, webhook-driven plan changes, dispute suspension', async
     await new Promise((resolve) => server.close(resolve))
   }
 })
+
+test('owner accounts (ADMIN_EMAILS) are never limited, and usage is still recorded', async () => {
+  const ctx = await startApp({ plan: 'free', config: { adminEmails: ['owner@example.com'] } })
+  try {
+    ctx.store.state.usage.set(`user-1|${currentPeriod()}|audit`, 999_999)
+    ctx.store.state.usage.set(`user-1|${currentPeriod()}|probe`, 999_999)
+    assert.equal((await ctx.api('POST', '/api/audit', { url: 'acme.com' })).status, 200)
+    const account = (await ctx.api('GET', '/api/account')).body
+    assert.deepEqual([account.plan, account.planLabel, account.unlimited, account.usage.audit], ['owner', 'Owner', true, 1_000_000])
+    assert.deepEqual(account.plans.map((plan) => plan.id), ['free', 'pro', 'agency'], 'the owner plan is not offered')
+    const project = (await ctx.api('POST', '/api/projects', { name: 'P', brand: 'Acme' })).body.project
+    await ctx.api('POST', `/api/projects/${project.id}/prompts`, { prompts: [{ text: 'best crm' }] })
+    assert.equal((await ctx.api('POST', `/api/projects/${project.id}/measurements`, { surfaces: ['ChatGPT'], samples: 5 })).status, 201)
+    assert.equal((await ctx.api('PUT', `/api/projects/${project.id}/schedule`, { frequency: 'daily', surfaces: ['ChatGPT'] })).status, 200)
+  } finally {
+    await ctx.close()
+  }
+  const other = await startApp({ plan: 'free', config: { adminEmails: ['someone-else@example.com'] } })
+  try {
+    other.store.state.usage.set(`user-1|${currentPeriod()}|audit`, 999_999)
+    assert.equal((await other.api('POST', '/api/audit', { url: 'acme.com' })).status, 429)
+  } finally {
+    await other.close()
+  }
+})

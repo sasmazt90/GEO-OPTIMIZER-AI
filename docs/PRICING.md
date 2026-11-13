@@ -56,7 +56,7 @@ Hosting and database are not per-user costs: roughly $20 per month for a commerc
 - Allowances are monthly, not daily, so the worst case per subscriber is bounded.
 - Web-grounded answers consume 4 credits.
 - A free account can cost at most about $0.57 per month.
-- `ADMIN_EMAILS` accounts get the Agency allowance without billing.
+- `ADMIN_EMAILS` accounts are owner accounts: usage is recorded but not limited, and nothing is billed. Their model cost is real, so keep the list short and set a monthly limit on the OpenRouter key.
 - To cap spend further, set `PROBE_MODEL_<SURFACE>` to cheaper models and set a monthly limit on the OpenRouter key.
 
 ## VAT

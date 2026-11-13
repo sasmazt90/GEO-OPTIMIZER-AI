@@ -3,7 +3,8 @@ import { Check, CreditCard, Loader2 } from 'lucide-react'
 import { api } from '../api.js'
 import { Notice } from './shared.jsx'
 
-function Meter({ label, used, limit }) {
+function Meter({ label, used, limit, unlimited }) {
+  if (unlimited) return <div className="meter"><div><span>{label}</span><strong>{used.toLocaleString()} used · unlimited</strong></div><div className="bar wide"><i style={{ width: '0%' }} /></div></div>
   const share = limit ? Math.min(100, Math.round((used / limit) * 100)) : 0
   return (
     <div className="meter">
@@ -33,7 +34,7 @@ export default function Plans({ account }) {
 
   return (
     <section className="panel account-panel">
-      <div className="account-head"><div><h2>Plan and usage</h2><p>You are on the <strong>{account.planLabel}</strong> plan. Allowances reset on {account.resetsOn}.</p></div>
+      <div className="account-head"><div><h2>Plan and usage</h2><p>You are on the <strong>{account.planLabel}</strong> plan. {account.unlimited ? 'Usage is recorded but not limited.' : `Allowances reset on ${account.resetsOn}.`}</p></div>
         {account.billing.hasCustomer && account.billing.enabled && (
           <button className="ghost-button" onClick={() => go('/api/billing/portal', null, 'portal')} disabled={Boolean(busy)}>{busy === 'portal' ? <Loader2 className="spin" size={16} /> : <CreditCard size={16} />}Manage billing</button>
         )}
@@ -42,10 +43,10 @@ export default function Plans({ account }) {
       {account.billing.flag === 'suspended' && <Notice kind="error">Paid features are paused because a payment was disputed. Contact support to resolve it.</Notice>}
       {!account.metered && <Notice kind="info">Usage metering starts after the next database update.</Notice>}
       <div className="meters">
-        <Meter label="Live answer credits" used={account.usage.probe} limit={account.limits.probes} />
-        <Meter label="Analyses" used={account.usage.analysis} limit={account.limits.analyses} />
-        <Meter label="Audits" used={account.usage.audit} limit={account.limits.audits} />
-        <Meter label="Crawled pages" used={account.usage.crawl || 0} limit={account.limits.crawlPagesMonthly} />
+        <Meter label="Live answer credits" used={account.usage.probe} limit={account.limits.probes} unlimited={account.unlimited} />
+        <Meter label="Analyses" used={account.usage.analysis} limit={account.limits.analyses} unlimited={account.unlimited} />
+        <Meter label="Audits" used={account.usage.audit} limit={account.limits.audits} unlimited={account.unlimited} />
+        <Meter label="Crawled pages" used={account.usage.crawl || 0} limit={account.limits.crawlPagesMonthly} unlimited={account.unlimited} />
       </div>
 
       <div className="interval-toggle" role="group" aria-label="Billing interval">

@@ -19,6 +19,8 @@ export const PLANS = {
   free: { label: 'Free', price: { month: 0, year: 0 }, probes: 60, analyses: 30, audits: 20, projects: 1, promptsPerProject: 10, maxSamples: 3, auditPages: 0, crawlPages: 25, crawlPagesMonthly: 100, keywords: 10 },
   pro: { label: 'Pro', price: { month: 49, year: 490 }, probes: 2500, analyses: 500, audits: 500, projects: 10, promptsPerProject: 50, maxSamples: 5, auditPages: 5, crawlPages: 500, crawlPagesMonthly: 5000, keywords: 100 },
   agency: { label: 'Agency', price: { month: 149, year: 1490 }, probes: 7000, analyses: 2000, audits: 3000, projects: 50, promptsPerProject: 200, maxSamples: 5, auditPages: 10, crawlPages: 2000, crawlPagesMonthly: 20000, keywords: 500 },
+  // Owner accounts (ADMIN_EMAILS): usage is recorded but never limited. Not purchasable and not listed.
+  owner: { label: 'Owner', unlimited: true, price: { month: 0, year: 0 }, probes: 0, analyses: 0, audits: 0, projects: 500, promptsPerProject: 500, maxSamples: 5, auditPages: 10, crawlPages: 2000, crawlPagesMonthly: 0, keywords: 5000 },
 }
 
 export const PAID_PLANS = ['pro', 'agency']
@@ -34,7 +36,7 @@ export function planFromLookupKey(key) {
 }
 
 export function resolvePlan(profile, user, adminEmails = []) {
-  if (user?.email && adminEmails.includes(user.email.toLowerCase())) return 'agency'
+  if (user?.email && adminEmails.includes(user.email.toLowerCase())) return 'owner'
   if (profile?.billing_flag === 'suspended') return 'free'
   return PLANS[profile?.plan] ? profile.plan : 'free'
 }
@@ -64,6 +66,7 @@ export class QuotaError extends Error {
 export async function consume(store, userId, plan, kind, amount = 1) {
   const limit = PLANS[plan][USAGE_KINDS[kind]]
   const period = currentPeriod()
+  if (PLANS[plan].unlimited) return store.incrementUsage(userId, period, kind, amount)
   const used = await store.getUsageCount(userId, period, kind)
   if (used !== null && used + amount > limit) throw new QuotaError(kind, limit, plan)
   await store.incrementUsage(userId, period, kind, amount)

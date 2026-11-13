@@ -458,6 +458,7 @@ export function createApp({ store, llm, fetcher, billing = null, supabaseAdmin =
       plan: req.plan,
       planLabel: req.limits.label,
       limits: req.limits,
+      unlimited: Boolean(req.limits.unlimited),
       usage: { analysis: usage?.analysis || 0, probe: usage?.probe || 0, audit: usage?.audit || 0, crawl: usage?.crawl || 0 },
       features: { render: Boolean(renderer), searchConsole: Boolean(gsc?.enabled && tokenBox), vitals: Boolean(vitals) },
       metered: usage !== null,
@@ -471,7 +472,7 @@ export function createApp({ store, llm, fetcher, billing = null, supabaseAdmin =
         status: req.profile?.subscription_status || 'none',
         flag: req.profile?.billing_flag || null,
       },
-      plans: Object.entries(PLANS).map(([id, plan]) => ({ id, label: plan.label, price: plan.price, probes: plan.probes, analyses: plan.analyses, audits: plan.audits, projects: plan.projects, promptsPerProject: plan.promptsPerProject, maxSamples: plan.maxSamples, auditPages: plan.auditPages, crawlPages: plan.crawlPages, crawlPagesMonthly: plan.crawlPagesMonthly, keywords: plan.keywords })),
+      plans: Object.entries(PLANS).filter(([, plan]) => !plan.unlimited).map(([id, plan]) => ({ id, label: plan.label, price: plan.price, probes: plan.probes, analyses: plan.analyses, audits: plan.audits, projects: plan.projects, promptsPerProject: plan.promptsPerProject, maxSamples: plan.maxSamples, auditPages: plan.auditPages, crawlPages: plan.crawlPages, crawlPagesMonthly: plan.crawlPagesMonthly, keywords: plan.keywords })),
     })
   })
 

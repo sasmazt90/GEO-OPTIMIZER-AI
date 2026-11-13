@@ -487,7 +487,7 @@ function AppHeader({ user, account, logout, onMenu, onProfile }) {
       </div>
       {user && (
         <div className="account-chip">
-          {account && <button className="plan-chip" onClick={onProfile} title="Plan and usage">{account.planLabel} · {Math.max(0, account.limits.probes - account.usage.probe).toLocaleString()} credits</button>}
+          {account && <button className="plan-chip" onClick={onProfile} title="Plan and usage">{account.planLabel} · {account.unlimited ? 'unlimited' : Math.max(0, account.limits.probes - account.usage.probe).toLocaleString()} credits</button>}
           <button className="profile-button" onClick={onProfile} aria-label="Open profile settings">
             <UserRound size={17} />
             <span>{user.name}</span>

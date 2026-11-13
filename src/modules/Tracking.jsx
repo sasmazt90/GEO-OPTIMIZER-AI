@@ -368,7 +368,7 @@ export default function Tracking({ account, onUsage }) {
   const { project, prompts, measurements, promptLimit } = detail
   const latest = measurements.find((item) => item.status === 'completed' && item.summary)
   const credits = prompts.length * surfaces.length * samples * (grounded ? account?.groundedMultiplier || 4 : 1)
-  const remaining = account ? account.limits.probes - account.usage.probe : null
+  const remaining = account && !account.unlimited ? account.limits.probes - account.usage.probe : null
   const canRun = prompts.length > 0 && surfaces.length > 0 && !progress && (remaining === null || credits <= remaining)
 
   return (

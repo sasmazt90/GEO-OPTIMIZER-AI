@@ -30,7 +30,7 @@ export default function Schedule({ projectId, account, promptCount }) {
   const multiplier = form.grounded ? account?.groundedMultiplier || 4 : 1
   const perRun = promptCount * form.surfaces.length * form.samples * multiplier
   const perMonth = perRun * (form.frequency === 'daily' ? 30 : form.frequency === 'weekly' ? 4.35 : 0)
-  const allowance = account?.limits?.probes || 0
+  const allowance = account?.unlimited ? 0 : account?.limits?.probes || 0
   const schedule = info.schedule
 
   async function save() {
@@ -91,7 +91,7 @@ export default function Schedule({ projectId, account, promptCount }) {
               </Field>
             )}
           </div>
-          <p className="panel-note">Each run uses <strong>{perRun.toLocaleString('en-US')}</strong> answer credits, about <strong>{Math.round(perMonth).toLocaleString('en-US')}</strong> per month of your {allowance.toLocaleString('en-US')}.</p>
+          <p className="panel-note">Each run uses <strong>{perRun.toLocaleString('en-US')}</strong> answer credits, about <strong>{Math.round(perMonth).toLocaleString('en-US')}</strong> per month{allowance > 0 ? ` of your ${allowance.toLocaleString('en-US')}` : ''}.</p>
           {allowance > 0 && perMonth > allowance && <Notice kind="warn">This schedule needs more credits per month than your plan includes. Runs are skipped once the allowance is used up. Reduce models, answers or frequency, or upgrade.</Notice>}
           {!promptCount && <Notice kind="warn">Add prompts first: a run without prompts is skipped.</Notice>}
         </>
