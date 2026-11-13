@@ -11,7 +11,9 @@ import { buildTasks, processBatch, summarize } from './measure.js'
 import { analyzeAnswer, domainOf, wilson } from './mentions.js'
 import { BlockedUrlError, assertPublicUrl, normalizeUrl } from './net.js'
 import { GROUNDED_MULTIPLIER, PAID_PLANS, PLANS, QuotaError, consume, currentPeriod, nextReset, resolvePlan } from './plans.js'
+import { compareRender } from './render.js'
 import { AI_BOTS, evaluateRobots, parseRobots } from './robots.js'
+import { handleSeoError, registerSeoRoutes } from './seo.js'
 import { MigrationPendingError } from './store.js'
 
 const toolInstructions = {
@@ -48,7 +50,7 @@ const generateSchema = z.object({
   input: z.record(z.string(), z.unknown()).default({}),
 })
 const urlSchema = z.object({ url: z.string().trim().min(3).max(500) })
-const auditSchema = z.object({ url: z.string().trim().min(3).max(500), pages: z.number().int().min(0).max(10).default(0) })
+const auditSchema = z.object({ url: z.string().trim().min(3).max(500), pages: z.number().int().min(0).max(10).default(0), render: z.boolean().default(false) })
 const competitorSchema = z.object({ name: text(80), aliases: z.array(text(80)).max(5).default([]) })
 const projectSchema = z.object({
   name: text(80),
@@ -111,7 +113,7 @@ function normalizeResult(tool, result) {
   return merged
 }
 
-export function createApp({ store, llm, fetcher, billing = null, supabaseAdmin = null, supabaseAuth = null, authenticate = null, config = {} }) {
+export function createApp({ store, llm, fetcher, billing = null, supabaseAdmin = null, supabaseAuth = null, authenticate = null, gsc = null, tokenBox = null, vitals = null, renderer = null, config = {} }) {
   const app = express()
   const isProduction = config.isProduction ?? process.env.NODE_ENV === 'production'
   const appUrl = config.appUrl || 'http://localhost:5173'
@@ -354,7 +356,7 @@ export function createApp({ store, llm, fetcher, billing = null, supabaseAdmin =
 
   // ---------- routes ----------
   app.get('/api/health', (req, res) => {
-    res.json({ ok: true, service: 'GEO OPTIMIZER AI', version: 2, auth: supabaseAuth ? 'supabase' : 'custom', models: llm.available(), probes: llm.canProbe(), billing: Boolean(billing?.enabled), time: new Date().toISOString() })
+    res.json({ ok: true, service: 'GEO OPTIMIZER AI', version: 2, auth: supabaseAuth ? 'supabase' : 'custom', models: llm.available(), probes: llm.canProbe(), billing: Boolean(billing?.enabled), searchConsole: Boolean(gsc?.enabled && tokenBox), render: Boolean(renderer), time: new Date().toISOString() })
   })
 
   app.post('/api/auth/register', requireAuthClients, async (req, res) => {
@@ -455,7 +457,8 @@ export function createApp({ store, llm, fetcher, billing = null, supabaseAdmin =
       plan: req.plan,
       planLabel: req.limits.label,
       limits: req.limits,
-      usage: { analysis: usage?.analysis || 0, probe: usage?.probe || 0, audit: usage?.audit || 0 },
+      usage: { analysis: usage?.analysis || 0, probe: usage?.probe || 0, audit: usage?.audit || 0, crawl: usage?.crawl || 0 },
+      features: { render: Boolean(renderer), searchConsole: Boolean(gsc?.enabled && tokenBox), vitals: Boolean(vitals) },
       metered: usage !== null,
       resetsOn: nextReset(),
       groundedMultiplier: GROUNDED_MULTIPLIER,
@@ -467,7 +470,7 @@ export function createApp({ store, llm, fetcher, billing = null, supabaseAdmin =
         status: req.profile?.subscription_status || 'none',
         flag: req.profile?.billing_flag || null,
       },
-      plans: Object.entries(PLANS).map(([id, plan]) => ({ id, label: plan.label, price: plan.price, probes: plan.probes, analyses: plan.analyses, audits: plan.audits, projects: plan.projects, promptsPerProject: plan.promptsPerProject, maxSamples: plan.maxSamples, auditPages: plan.auditPages })),
+      plans: Object.entries(PLANS).map(([id, plan]) => ({ id, label: plan.label, price: plan.price, probes: plan.probes, analyses: plan.analyses, audits: plan.audits, projects: plan.projects, promptsPerProject: plan.promptsPerProject, maxSamples: plan.maxSamples, auditPages: plan.auditPages, crawlPages: plan.crawlPages, crawlPagesMonthly: plan.crawlPagesMonthly, keywords: plan.keywords })),
     })
   })
 
@@ -553,8 +556,22 @@ export function createApp({ store, llm, fetcher, billing = null, supabaseAdmin =
     const parsed = auditSchema.safeParse(req.body)
     if (!parsed.success) return res.status(400).json({ error: 'Enter a valid website URL.' })
     assertPublicUrl(parsed.data.url)
-    await consume(store, req.user.id, req.plan, 'audit', 1)
+    const wantsRender = parsed.data.render && Boolean(renderer)
+    await consume(store, req.user.id, req.plan, 'audit', wantsRender ? 2 : 1)
     const result = await runAudit(normalizeUrl(parsed.data.url), { fetcher, extraPages: Math.min(parsed.data.pages, req.limits.auditPages) })
+    if (wantsRender && result.page) {
+      // The rendered DOM is compared with the same raw response a non-rendering crawler receives.
+      const [raw, rendered] = await Promise.all([fetcher(result.url, { timeoutMs: 12000 }), renderer.render(result.url)])
+      result.rendering = rendered.ok && raw.ok ? compareRender(extractPage(raw.text, raw.url), rendered) : { ok: false, error: rendered.error || 'The page could not be rendered.' }
+    }
+    const checks = [...result.categories, ...(result.rendering?.ok ? [result.rendering.category] : [])]
+      .flatMap((category) => category.checks.map((item) => ({ id: item.id, label: item.label, status: item.status, detail: String(item.detail || '').slice(0, 300), category: category.label })))
+    try {
+      const saved = await store.saveAudit(req.user.id, { url: result.url, host: new URL(result.url).hostname.toLowerCase().replace(/^www\./, ''), score: result.score, counts: result.counts, checks, rendered: Boolean(result.rendering?.ok) })
+      result.auditId = saved.id
+    } catch (error) {
+      if (!(error instanceof MigrationPendingError)) console.error('audit history', error?.message)
+    }
     await store.saveRun(req.user.id, 'audit', { url: parsed.data.url }, { title: result.url, score: result.score, summary: result.summary, counts: result.counts })
     res.json(result)
   })
@@ -716,6 +733,8 @@ export function createApp({ store, llm, fetcher, billing = null, supabaseAdmin =
     res.json({ ...progress, total: measurement.total })
   })
 
+  registerSeoRoutes(app, { store, fetcher, requireAuth, gsc, tokenBox, vitals, config: { ...config, appUrl, isProduction } })
+
   app.use('/api/', (req, res) => res.status(404).json({ error: 'Not found' }))
 
   if (config.staticDir) {
@@ -728,6 +747,7 @@ export function createApp({ store, llm, fetcher, billing = null, supabaseAdmin =
     if (error instanceof BlockedUrlError) return res.status(400).json({ error: error.message })
     if (error instanceof QuotaError) return res.status(429).json({ error: error.message, quota: true, kind: error.kind })
     if (error instanceof MigrationPendingError) return res.status(503).json({ error: error.message, migration: true })
+    if (handleSeoError(error, res)) return undefined
     if (error?.type === 'entity.parse.failed' || error?.type === 'entity.too.large') return res.status(400).json({ error: 'Invalid request body' })
     console.error(req.method, req.path, error?.message || error)
     res.status(500).json({ error: 'Something went wrong. Please try again.' })

@@ -52,6 +52,66 @@ try {
   await page.getByText('Crawler access').waitFor()
   await page.screenshot({ path: `${out}/audit.png`, fullPage: true })
 
+  // Rendered audit and audit history.
+  await page.getByRole('button', { name: 'Audit another page' }).click()
+  await page.getByPlaceholder('https://example.com').fill('acme.com')
+  await page.getByText('Also render the page with JavaScript').click()
+  await page.getByRole('button', { name: 'Run audit' }).click()
+  await page.getByText('Words after rendering').waitFor()
+  await page.getByRole('button', { name: 'Compare audits' }).click()
+  await page.getByText('Checks improved').waitFor()
+  await page.screenshot({ path: `${out}/audit-rendered.png`, fullPage: true })
+
+  // Search Console: performance, rank tracking, opportunities.
+  await page.getByRole('button', { name: 'Search Console' }).first().click()
+  await page.getByText('Top queries').waitFor()
+  await page.screenshot({ path: `${out}/gsc-performance.png`, fullPage: true })
+  await page.getByRole('button', { name: 'Rank tracking' }).click()
+  await page.getByPlaceholder('Add keywords, separated by commas').fill('acme crm, never seen')
+  await page.getByRole('button', { name: 'Track', exact: true }).click()
+  await page.getByText('no impressions').waitFor()
+  await page.getByText('Biggest gains').waitFor()
+  await page.screenshot({ path: `${out}/gsc-rankings.png`, fullPage: true })
+  await page.getByRole('button', { name: 'Keyword opportunities' }).click()
+  await page.getByText('Striking distance: close to the top results').waitFor()
+  await page.screenshot({ path: `${out}/gsc-opportunities.png`, fullPage: true })
+
+  // Site crawl.
+  await page.getByRole('button', { name: 'Site Crawl' }).first().click()
+  await page.getByPlaceholder('https://example.com').fill('acme.com')
+  await page.getByRole('button', { name: 'Start crawl' }).click()
+  await page.getByText('Issues by number of pages').waitFor({ timeout: 30000 })
+  await page.getByText('Broken and blocked URLs').waitFor()
+  await page.screenshot({ path: `${out}/crawl.png`, fullPage: true })
+
+  // Core Web Vitals.
+  await page.getByRole('button', { name: 'Core Web Vitals' }).first().click()
+  await page.getByPlaceholder('https://example.com').fill('acme.com')
+  await page.getByRole('button', { name: 'Test page' }).click()
+  await page.getByText('Core Web Vitals: Failed').waitFor()
+  await page.screenshot({ path: `${out}/vitals.png`, fullPage: true })
+
+  // Schema markup: validate a URL, then generate and validate.
+  await page.getByRole('button', { name: 'Schema Markup' }).first().click()
+  await page.getByPlaceholder('https://example.com/product').fill('acme.com')
+  await page.locator('form').getByRole('button', { name: 'Validate', exact: true }).click()
+  await page.getByText('SoftwareApplication: Acme CRM').waitFor()
+  await page.screenshot({ path: `${out}/schema-validate.png`, fullPage: true })
+  await page.getByRole('button', { name: 'Generate', exact: true }).click()
+  await page.getByPlaceholder('Acme GmbH').fill('Acme')
+  await page.locator('.split').getByRole('button', { name: 'Validate', exact: true }).click()
+  await page.getByText('Recommended property "url" is missing.').waitFor()
+  await page.screenshot({ path: `${out}/schema-generate.png`, fullPage: true })
+
+  // Page comparison.
+  await page.getByRole('button', { name: 'Page Comparison' }).first().click()
+  await page.getByPlaceholder('https://example.com/your-page').fill('acme.com/pricing')
+  await page.getByPlaceholder(/competitor-a\.com/).fill('acme.com')
+  await page.getByRole('button', { name: 'Compare pages' }).click()
+  await page.getByText('Where your page is behind').waitFor()
+  await page.getByText('Side by side').waitFor()
+  await page.screenshot({ path: `${out}/compare.png`, fullPage: true })
+
   // Benchmark.
   await page.getByRole('button', { name: 'Benchmark' }).first().click()
   await page.getByPlaceholder('Best CRM software for mid-market teams').fill('best crm')

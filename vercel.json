@@ -2,10 +2,19 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/index.js": { "maxDuration": 60 }
+    "api/index.js": {
+      "maxDuration": 60,
+      "includeFiles": "node_modules/@sparticuz/chromium/bin/**"
+    }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index" },
-    { "source": "/((?!og\\.png|robots\\.txt|sitemap\\.xml|llms\\.txt|favicon\\.svg|icons\\.svg|assets/).*)", "destination": "/index.html" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/((?!og\\.png|robots\\.txt|sitemap\\.xml|llms\\.txt|favicon\\.svg|icons\\.svg|assets/).*)",
+      "destination": "/index.html"
+    }
   ]
 }

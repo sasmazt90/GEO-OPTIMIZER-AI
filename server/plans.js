@@ -16,13 +16,13 @@ export const UNIT_COST = {
 export const GROUNDED_MULTIPLIER = 4
 
 export const PLANS = {
-  free: { label: 'Free', price: { month: 0, year: 0 }, probes: 60, analyses: 30, audits: 20, projects: 1, promptsPerProject: 10, maxSamples: 3, auditPages: 0 },
-  pro: { label: 'Pro', price: { month: 49, year: 490 }, probes: 2500, analyses: 500, audits: 500, projects: 10, promptsPerProject: 50, maxSamples: 5, auditPages: 5 },
-  agency: { label: 'Agency', price: { month: 149, year: 1490 }, probes: 7000, analyses: 2000, audits: 3000, projects: 50, promptsPerProject: 200, maxSamples: 5, auditPages: 10 },
+  free: { label: 'Free', price: { month: 0, year: 0 }, probes: 60, analyses: 30, audits: 20, projects: 1, promptsPerProject: 10, maxSamples: 3, auditPages: 0, crawlPages: 25, crawlPagesMonthly: 100, keywords: 10 },
+  pro: { label: 'Pro', price: { month: 49, year: 490 }, probes: 2500, analyses: 500, audits: 500, projects: 10, promptsPerProject: 50, maxSamples: 5, auditPages: 5, crawlPages: 500, crawlPagesMonthly: 5000, keywords: 100 },
+  agency: { label: 'Agency', price: { month: 149, year: 1490 }, probes: 7000, analyses: 2000, audits: 3000, projects: 50, promptsPerProject: 200, maxSamples: 5, auditPages: 10, crawlPages: 2000, crawlPagesMonthly: 20000, keywords: 500 },
 }
 
 export const PAID_PLANS = ['pro', 'agency']
-export const USAGE_KINDS = { analysis: 'analyses', probe: 'probes', audit: 'audits' }
+export const USAGE_KINDS = { analysis: 'analyses', probe: 'probes', audit: 'audits', crawl: 'crawlPagesMonthly' }
 
 export function lookupKey(plan, interval) {
   return `geo_${plan}_${interval === 'year' ? 'yearly' : 'monthly'}`
@@ -50,7 +50,7 @@ export function nextReset(now = new Date()) {
 
 export class QuotaError extends Error {
   constructor(kind, limit, plan) {
-    const noun = { probe: 'live model answers', analysis: 'analyses', audit: 'audits' }[kind] || kind
+    const noun = { probe: 'live model answers', analysis: 'analyses', audit: 'audits', crawl: 'crawled pages' }[kind] || kind
     super(`You have used this month's ${noun} on the ${PLANS[plan].label} plan (${limit}). ${plan === 'agency' ? 'The allowance' : 'Upgrade for more, or the allowance'} resets on ${nextReset()}.`)
     this.name = 'QuotaError'
     this.kind = kind

@@ -36,7 +36,25 @@ const sampleOut = (row) => ({
 })
 const runOut = (row) => ({ id: row.id, userId: row.user_id, type: row.type, payload: row.payload, result: row.result, createdAt: row.created_at })
 
+const crawlOut = (row) => row && ({
+  id: row.id, userId: row.user_id, startUrl: row.start_url, host: row.host, status: row.status, config: row.config || {}, summary: row.summary || null,
+  createdAt: row.created_at, completedAt: row.completed_at,
+})
+const crawlPageOut = (row) => ({ id: row.id, url: row.url, depth: row.depth, source: row.source, foundOn: row.found_on || '', linked: Boolean(row.linked), status: row.status, result: row.result || null })
+const auditOut = (row) => row && ({ id: row.id, url: row.url, host: row.host, score: row.score, counts: row.counts || {}, checks: row.checks || [], rendered: Boolean(row.rendered), createdAt: row.created_at })
+const keywordOut = (row) => ({ id: row.id, siteUrl: row.site_url, query: row.query, createdAt: row.created_at })
+const PAGE_SIZE = 1000
+
 export function createSupabaseStore(db) {
+  // PostgREST returns at most 1000 rows per request, so large reads are paged.
+  async function allRows(build) {
+    const rows = []
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const page = unwrap(await build().range(from, from + PAGE_SIZE - 1))
+      rows.push(...page)
+      if (page.length < PAGE_SIZE) return rows
+    }
+  }
   return {
     async getProfile(userId) {
       return unwrap(await db.from('geo_app_users').select('*').eq('id', userId).maybeSingle())
@@ -148,11 +166,110 @@ export function createSupabaseStore(db) {
     async updateSample(id, patch) {
       unwrap(await db.from('geo_app_samples').update(patch).eq('id', id))
     },
+
+    async getGscConnection(userId) {
+      const row = unwrap(await db.from('geo_app_gsc_connections').select('*').eq('user_id', userId).maybeSingle())
+      return row ? { email: row.google_email, refreshToken: row.refresh_token, createdAt: row.created_at } : null
+    },
+    async saveGscConnection(userId, { email, refreshToken }) {
+      unwrap(await db.from('geo_app_gsc_connections').upsert({ user_id: userId, google_email: email || '', refresh_token: refreshToken, created_at: new Date().toISOString() }, { onConflict: 'user_id' }))
+    },
+    async deleteGscConnection(userId) {
+      unwrap(await db.from('geo_app_gsc_connections').delete().eq('user_id', userId))
+    },
+    async listKeywords(userId, siteUrl) {
+      return unwrap(await db.from('geo_app_keywords').select('*').eq('user_id', userId).eq('site_url', siteUrl).order('created_at', { ascending: true }).limit(1000)).map(keywordOut)
+    },
+    async countKeywords(userId) {
+      const { count, error } = await db.from('geo_app_keywords').select('id', { count: 'exact', head: true }).eq('user_id', userId)
+      if (error) unwrap({ data: null, error })
+      return count || 0
+    },
+    async addKeywords(userId, siteUrl, queries) {
+      const rows = queries.map((query) => ({ id: nanoid(), user_id: userId, site_url: siteUrl, query }))
+      unwrap(await db.from('geo_app_keywords').upsert(rows, { onConflict: 'user_id,site_url,query', ignoreDuplicates: true }))
+    },
+    async deleteKeyword(userId, id) {
+      unwrap(await db.from('geo_app_keywords').delete().eq('user_id', userId).eq('id', id))
+    },
+
+    async createCrawl(userId, data, seeds) {
+      const id = nanoid()
+      const row = unwrap(await db.from('geo_app_crawls').insert({ id, user_id: userId, start_url: data.startUrl, host: data.host, status: 'running', config: data.config }).select('*').single())
+      const pages = seeds.map((seed) => ({ id: nanoid(), crawl_id: id, user_id: userId, url: seed.url, depth: seed.depth, source: seed.source, linked: seed.source !== 'sitemap' }))
+      for (let offset = 0; offset < pages.length; offset += 500) unwrap(await db.from('geo_app_crawl_pages').upsert(pages.slice(offset, offset + 500), { onConflict: 'crawl_id,url', ignoreDuplicates: true }))
+      return crawlOut(row)
+    },
+    async getCrawl(userId, id) {
+      return crawlOut(unwrap(await db.from('geo_app_crawls').select('*').eq('user_id', userId).eq('id', id).maybeSingle()))
+    },
+    async listCrawls(userId, limit = 20) {
+      return unwrap(await db.from('geo_app_crawls').select('id,user_id,start_url,host,status,summary,created_at,completed_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(limit)).map(crawlOut)
+    },
+    async deleteCrawl(userId, id) {
+      unwrap(await db.from('geo_app_crawls').delete().eq('user_id', userId).eq('id', id))
+    },
+    async updateCrawl(id, patch) {
+      const data = {}
+      if (patch.status) data.status = patch.status
+      if (patch.summary) data.summary = patch.summary
+      if (patch.completedAt) data.completed_at = patch.completedAt
+      unwrap(await db.from('geo_app_crawls').update(data).eq('id', id))
+    },
+    async claimCrawlPages(crawlId, limit) {
+      const staleBefore = new Date(Date.now() - STALE_CLAIM_MS).toISOString()
+      const candidates = unwrap(await db.from('geo_app_crawl_pages').select('id').eq('crawl_id', crawlId)
+        .or(`status.eq.pending,and(status.eq.running,claimed_at.lt.${staleBefore})`).order('depth').order('id').limit(limit))
+      if (!candidates.length) return []
+      return unwrap(await db.from('geo_app_crawl_pages').update({ status: 'running', claimed_at: new Date().toISOString() })
+        .in('id', candidates.map((row) => row.id)).in('status', ['pending', 'running']).select('id,url,depth,source,found_on,linked,status')).map(crawlPageOut)
+    },
+    async countCrawlPages(crawlId, statuses) {
+      let query = db.from('geo_app_crawl_pages').select('id', { count: 'exact', head: true }).eq('crawl_id', crawlId)
+      if (statuses) query = query.in('status', statuses)
+      const { count, error } = await query
+      if (error) unwrap({ data: null, error })
+      return count || 0
+    },
+    // Adds newly found URLs (up to maxPages in total) and marks sitemap URLs that turned out to be linked.
+    async discoverCrawlPages(crawlId, userId, entries, maxPages) {
+      const existing = await allRows(() => db.from('geo_app_crawl_pages').select('id,url,source,linked').eq('crawl_id', crawlId).order('id'))
+      const known = new Map(existing.map((row) => [row.url, row]))
+      const toLink = entries.map((entry) => known.get(entry.url)).filter((row) => row && !row.linked).map((row) => row.id)
+      for (let offset = 0; offset < toLink.length; offset += 150) unwrap(await db.from('geo_app_crawl_pages').update({ linked: true }).in('id', toLink.slice(offset, offset + 150)))
+      const fresh = entries.filter((entry) => !known.has(entry.url)).slice(0, Math.max(0, maxPages - existing.length))
+      if (!fresh.length) return 0
+      const rows = fresh.map((entry) => ({ id: nanoid(), crawl_id: crawlId, user_id: userId, url: entry.url, depth: entry.depth, source: 'link', found_on: entry.foundOn || '', linked: true }))
+      unwrap(await db.from('geo_app_crawl_pages').upsert(rows, { onConflict: 'crawl_id,url', ignoreDuplicates: true }))
+      return rows.length
+    },
+    async updateCrawlPage(id, patch) {
+      unwrap(await db.from('geo_app_crawl_pages').update(patch).eq('id', id))
+    },
+    async skipCrawlPages(crawlId) {
+      unwrap(await db.from('geo_app_crawl_pages').update({ status: 'skipped' }).eq('crawl_id', crawlId).in('status', ['pending', 'running']))
+    },
+    async listCrawlPages(crawlId) {
+      return (await allRows(() => db.from('geo_app_crawl_pages').select('id,url,depth,source,found_on,linked,status,result').eq('crawl_id', crawlId).order('id'))).map(crawlPageOut)
+    },
+
+    async saveAudit(userId, audit) {
+      const row = { id: nanoid(), user_id: userId, url: audit.url, host: audit.host, score: audit.score, counts: audit.counts, checks: audit.checks, rendered: Boolean(audit.rendered) }
+      return auditOut(unwrap(await db.from('geo_app_audits').insert(row).select('*').single()))
+    },
+    async listAudits(userId, { host = '', limit = 100 } = {}) {
+      let query = db.from('geo_app_audits').select('id,url,host,score,counts,rendered,created_at').eq('user_id', userId)
+      if (host) query = query.eq('host', host)
+      return unwrap(await query.order('created_at', { ascending: false }).limit(limit)).map(auditOut)
+    },
+    async getAudit(userId, id) {
+      return auditOut(unwrap(await db.from('geo_app_audits').select('*').eq('user_id', userId).eq('id', id).maybeSingle()))
+    },
   }
 }
 
 export function createMemoryStore() {
-  const state = { profiles: new Map(), runs: [], usage: new Map(), projects: [], prompts: [], measurements: [], samples: [] }
+  const state = { profiles: new Map(), runs: [], usage: new Map(), projects: [], prompts: [], measurements: [], samples: [], gsc: new Map(), keywords: [], crawls: [], crawlPages: [], audits: [] }
   const now = () => new Date().toISOString()
   return {
     state,
@@ -228,5 +345,66 @@ export function createMemoryStore() {
     },
     async listSamples(measurementId) { return state.samples.filter((sample) => sample.measurementId === measurementId) },
     async updateSample(id, patch) { Object.assign(state.samples.find((sample) => sample.id === id), patch) },
+
+    async getGscConnection(userId) { return state.gsc.get(userId) || null },
+    async saveGscConnection(userId, connection) { state.gsc.set(userId, { ...connection, createdAt: now() }) },
+    async deleteGscConnection(userId) { state.gsc.delete(userId) },
+    async listKeywords(userId, siteUrl) { return state.keywords.filter((item) => item.userId === userId && item.siteUrl === siteUrl) },
+    async countKeywords(userId) { return state.keywords.filter((item) => item.userId === userId).length },
+    async addKeywords(userId, siteUrl, queries) {
+      for (const query of queries) {
+        if (!state.keywords.some((item) => item.userId === userId && item.siteUrl === siteUrl && item.query === query)) state.keywords.push({ id: nanoid(), userId, siteUrl, query, createdAt: now() })
+      }
+    },
+    async deleteKeyword(userId, id) { state.keywords = state.keywords.filter((item) => !(item.userId === userId && item.id === id)) },
+
+    async createCrawl(userId, data, seeds) {
+      const crawl = { id: nanoid(), userId, startUrl: data.startUrl, host: data.host, status: 'running', config: data.config, summary: null, createdAt: now(), completedAt: null }
+      state.crawls.push(crawl)
+      state.crawlPages.push(...seeds.map((seed) => ({ id: nanoid(), crawlId: crawl.id, url: seed.url, depth: seed.depth, source: seed.source, foundOn: '', linked: seed.source !== 'sitemap', status: 'pending', result: null })))
+      return crawl
+    },
+    async getCrawl(userId, id) { return state.crawls.find((crawl) => crawl.userId === userId && crawl.id === id) || null },
+    async listCrawls(userId, limit = 20) { return state.crawls.filter((crawl) => crawl.userId === userId).slice(-limit).reverse() },
+    async deleteCrawl(userId, id) {
+      state.crawls = state.crawls.filter((crawl) => !(crawl.userId === userId && crawl.id === id))
+      state.crawlPages = state.crawlPages.filter((page) => page.crawlId !== id)
+    },
+    async updateCrawl(id, patch) { Object.assign(state.crawls.find((crawl) => crawl.id === id), patch) },
+    async claimCrawlPages(crawlId, limit) {
+      const pending = state.crawlPages.filter((page) => page.crawlId === crawlId && page.status === 'pending').sort((a, b) => a.depth - b.depth).slice(0, limit)
+      pending.forEach((page) => { page.status = 'running' })
+      return pending
+    },
+    async countCrawlPages(crawlId, statuses) {
+      return state.crawlPages.filter((page) => page.crawlId === crawlId && (!statuses || statuses.includes(page.status))).length
+    },
+    async discoverCrawlPages(crawlId, userId, entries, maxPages) {
+      let added = 0
+      for (const entry of entries) {
+        const existing = state.crawlPages.find((page) => page.crawlId === crawlId && page.url === entry.url)
+        if (existing) existing.linked = true
+        else if (state.crawlPages.filter((page) => page.crawlId === crawlId).length < maxPages) {
+          state.crawlPages.push({ id: nanoid(), crawlId, url: entry.url, depth: entry.depth, source: 'link', foundOn: entry.foundOn || '', linked: true, status: 'pending', result: null })
+          added += 1
+        }
+      }
+      return added
+    },
+    async updateCrawlPage(id, patch) { Object.assign(state.crawlPages.find((page) => page.id === id), patch) },
+    async skipCrawlPages(crawlId) {
+      state.crawlPages.filter((page) => page.crawlId === crawlId && ['pending', 'running'].includes(page.status)).forEach((page) => { page.status = 'skipped' })
+    },
+    async listCrawlPages(crawlId) { return state.crawlPages.filter((page) => page.crawlId === crawlId) },
+
+    async saveAudit(userId, audit) {
+      const row = { id: nanoid(), userId, ...audit, rendered: Boolean(audit.rendered), createdAt: new Date(Date.now() + state.audits.length).toISOString() }
+      state.audits.push(row)
+      return row
+    },
+    async listAudits(userId, { host = '', limit = 100 } = {}) {
+      return state.audits.filter((audit) => audit.userId === userId && (!host || audit.host === host)).slice(-limit).reverse().map((audit) => ({ ...audit, checks: undefined }))
+    },
+    async getAudit(userId, id) { return state.audits.find((audit) => audit.userId === userId && audit.id === id) || null },
   }
 }

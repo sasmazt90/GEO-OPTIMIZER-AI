@@ -45,6 +45,7 @@ export default function Plans({ account }) {
         <Meter label="Live answer credits" used={account.usage.probe} limit={account.limits.probes} />
         <Meter label="Analyses" used={account.usage.analysis} limit={account.limits.analyses} />
         <Meter label="Audits" used={account.usage.audit} limit={account.limits.audits} />
+        <Meter label="Crawled pages" used={account.usage.crawl || 0} limit={account.limits.crawlPagesMonthly} />
       </div>
 
       <div className="interval-toggle" role="group" aria-label="Billing interval">
@@ -66,6 +67,8 @@ export default function Plans({ account }) {
                 <li><Check size={15} />{plan.projects} project{plan.projects > 1 ? 's' : ''}, {plan.promptsPerProject} prompts each</li>
                 <li><Check size={15} />Up to {plan.maxSamples} answers per prompt and model</li>
                 <li><Check size={15} />{plan.auditPages ? `Audit up to ${plan.auditPages} extra pages per run` : 'Single-page audits'}</li>
+                <li><Check size={15} />Site crawls up to {plan.crawlPages.toLocaleString()} pages, {plan.crawlPagesMonthly.toLocaleString()} pages / month</li>
+                <li><Check size={15} />Search Console with {plan.keywords} tracked keywords</li>
               </ul>
               {current ? <span className="pill pill-ok">Current plan</span>
                 : plan.price.month === 0 ? <span className="muted">Included</span>

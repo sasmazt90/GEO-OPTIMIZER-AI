@@ -10,6 +10,10 @@ Plans and allowances live in `server/plans.js`. The test `unit economics: every 
 | Web-grounded answer | $0.032 (charged as 4 credits) | Adds live web search, billed per request by the search provider. |
 | Analysis (structured model call) | $0.003 | About 6,000 input and 1,000 output tokens on GPT-4o mini is $0.0015; doubled for headroom. |
 | Site audit / crawler check | $0 | Rule-based; compute only. |
+| Site crawl page, schema check, page comparison | $0 | Rule-based; compute only. Crawled pages have their own monthly allowance. |
+| Core Web Vitals test | $0 | Google PageSpeed Insights API (free quota). Uses one audit credit per device. |
+| Search Console reports | $0 | Google Search Console API (free quota). Not metered. |
+| JavaScript-rendered audit | $0 model cost | Headless Chromium on the function; several seconds of compute, so it uses two audit credits. |
 
 Costs are in USD and prices in EUR. The margin test treats 1 USD as 1 EUR, which understates the margin.
 
@@ -24,6 +28,9 @@ Costs are in USD and prices in EUR. The margin test treats 1 USD as 1 EUR, which
 | Audits / month | 20 | 500 | 3,000 |
 | Projects | 1 | 10 | 50 |
 | Prompts per project | 10 | 50 | 200 |
+| Pages per site crawl | 25 | 500 | 2,000 |
+| Crawled pages / month | 100 | 5,000 | 20,000 |
+| Tracked keywords (Search Console) | 10 | 100 | 500 |
 
 ## Margin if a subscriber uses 100% of the allowance
 

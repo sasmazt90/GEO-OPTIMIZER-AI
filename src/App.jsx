@@ -3,7 +3,11 @@ import {
   BarChart3,
   Activity,
   Bot,
+  Braces,
   BrainCircuit,
+  Columns3,
+  Gauge,
+  Network,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -28,8 +32,13 @@ import './App.css'
 import './modules/modules.css'
 import { api } from './api.js'
 import BotTraffic from './modules/BotTraffic.jsx'
+import PageCompare from './modules/PageCompare.jsx'
 import Plans from './modules/Plans.jsx'
+import SchemaMarkup from './modules/SchemaMarkup.jsx'
+import SearchConsole from './modules/SearchConsole.jsx'
 import SiteAudit from './modules/SiteAudit.jsx'
+import SiteCrawl from './modules/SiteCrawl.jsx'
+import WebVitals from './modules/WebVitals.jsx'
 import Tracking from './modules/Tracking.jsx'
 
 const languages = ['English', 'Turkish', 'German', 'French', 'Spanish', 'Italian', 'Portuguese']
@@ -38,10 +47,15 @@ const countries = ['Worldwide', 'United States', 'United Kingdom', 'Turkey', 'Ge
 const tools = [
   { id: 'tracking', label: 'Visibility Tracking', icon: LineChart, tag: 'Measured share of AI answers over time' },
   { id: 'audit', label: 'Site Audit', icon: ScanSearch, tag: 'Technical SEO and AI readiness' },
+  { id: 'searchConsole', label: 'Search Console', icon: Search, tag: 'Clicks, rankings and keyword opportunities' },
+  { id: 'siteCrawl', label: 'Site Crawl', icon: Network, tag: 'Every page, counted' },
+  { id: 'webVitals', label: 'Core Web Vitals', icon: Gauge, tag: 'Real-user and lab performance' },
+  { id: 'schema', label: 'Schema Markup', icon: Braces, tag: 'Validate and generate JSON-LD' },
+  { id: 'pageCompare', label: 'Page Comparison', icon: Columns3, tag: 'Your page against competitors' },
   { id: 'botTraffic', label: 'AI Bot Traffic', icon: Activity, tag: 'Crawler visits from your access logs' },
   { id: 'brandAccess', label: 'Brand & Access', icon: ShieldCheck, tag: 'Entity and crawler readiness' },
   { id: 'visibility', label: 'AI Visibility Check', icon: Eye, tag: 'Model presence by query' },
-  { id: 'fanout', label: 'Query Intelligence', icon: Search, tag: 'Query expansion' },
+  { id: 'fanout', label: 'Query Intelligence', icon: Wand2, tag: 'Query expansion' },
   { id: 'research', label: 'Prompt Research', icon: BrainCircuit, tag: 'Prompt universe' },
   { id: 'contentStudio', label: 'Content Studio', icon: FilePenLine, tag: 'Create and audit GEO content' },
   { id: 'benchmark', label: 'Benchmark', icon: BarChart3, tag: 'Brands named in live answers' },
@@ -62,7 +76,12 @@ const toolDescriptions = {
 const groupDescriptions = {
   tracking: 'Track a set of buyer questions for one brand. Every question is asked live on each AI model several times; mentions, position and cited sources are counted and charted over time.',
   botTraffic: 'Upload your web server access logs to see which AI and search crawlers really visit your site, how often, which pages they request and whether they hit errors. The files never leave your browser.',
-  audit: 'A rule-based audit of crawl access, indexability, on-page SEO, structured data and content extractability. The same page always gets the same score.',
+  audit: 'A rule-based audit of crawl access, indexability, on-page SEO, structured data and content extractability. The same page always gets the same score. Optionally renders the page with JavaScript, and keeps a history so you can compare audits.',
+  searchConsole: 'Connect Google Search Console to see clicks, impressions and positions, track rankings for your keywords and find keyword opportunities. Everything shown comes from your own Search Console data.',
+  siteCrawl: 'Crawls the whole site from the start page and the XML sitemap, scores every page and counts broken links, redirects, duplicate titles, thin and orphaned pages.',
+  webVitals: 'Core Web Vitals for a page: real-user field data from the Chrome UX Report and a Lighthouse lab test, both from Google PageSpeed Insights.',
+  schema: 'Validate the JSON-LD on a page or in pasted code against the properties Google documents, or generate markup for common types.',
+  pageCompare: 'Compare your page with up to three competitor pages: content depth, headings, structured data, freshness and where the query terms appear.',
   brandAccess: 'Run brand entity checks and AI crawler access simulations from one place.',
   visibility: toolDescriptions.visibility,
   fanout: toolDescriptions.fanout,
@@ -267,7 +286,7 @@ function downloadExcelReport(toolId, data) {
 }
 
 function App() {
-  const [activeTool, setActiveTool] = useState('tracking')
+  const [activeTool, setActiveTool] = useState(() => (new URLSearchParams(window.location.search).has('gsc') ? 'searchConsole' : 'tracking'))
   const [mobileNav, setMobileNav] = useState(false)
   const [navCollapsed, setNavCollapsed] = useState(false)
   const [legalPage, setLegalPage] = useState('')
@@ -278,6 +297,10 @@ function App() {
   const [recoveryToken, setRecoveryToken] = useState('')
   const [account, setAccount] = useState(null)
   const [billingNotice] = useState(() => new URLSearchParams(window.location.search).get('billing') || '')
+  const [gscNotice] = useState(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.has('gsc') ? { status: params.get('gsc'), reason: params.get('reason') || '' } : null
+  })
   const active = tools.find((tool) => tool.id === activeTool) || tools[0]
 
   const loadAccount = useCallback(async () => {
@@ -335,7 +358,8 @@ function App() {
       }
     }
     loadSession()
-    if (new URLSearchParams(window.location.search).has('billing')) window.history.replaceState({}, document.title, window.location.pathname)
+    const query = new URLSearchParams(window.location.search)
+    if (query.has('billing') || query.has('gsc')) window.history.replaceState({}, document.title, window.location.pathname)
     // Runs once on mount; loadRuns is recreated each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -439,7 +463,7 @@ function App() {
           {accountPage ? (
             <AccountSettings user={user} account={account} billingNotice={billingNotice} onBack={() => setAccountPage(false)} onUpdated={setUser} />
           ) : (
-            <ToolRouter activeTool={activeTool} onRunComplete={loadRuns} account={account} onUsage={loadAccount} />
+            <ToolRouter activeTool={activeTool} onRunComplete={loadRuns} account={account} onUsage={loadAccount} gscNotice={gscNotice} />
           )}
         </section>
       </main>
@@ -755,10 +779,15 @@ function SubToolSwitch({ value, onChange, options }) {
   )
 }
 
-function ToolRouter({ activeTool, onRunComplete, account, onUsage }) {
+function ToolRouter({ activeTool, onRunComplete, account, onUsage, gscNotice }) {
   if (activeTool === 'tracking') return <Tracking key={account ? 'ready' : 'loading'} account={account} onUsage={onUsage} />
   if (activeTool === 'botTraffic') return <BotTraffic />
   if (activeTool === 'audit') return <SiteAudit account={account} onRunComplete={onRunComplete} />
+  if (activeTool === 'searchConsole') return <SearchConsole notice={gscNotice} />
+  if (activeTool === 'siteCrawl') return <SiteCrawl key={account ? 'ready' : 'loading'} account={account} onUsage={onUsage} />
+  if (activeTool === 'webVitals') return <WebVitals onRunComplete={onRunComplete} />
+  if (activeTool === 'schema') return <SchemaMarkup onRunComplete={onRunComplete} />
+  if (activeTool === 'pageCompare') return <PageCompare onRunComplete={onRunComplete} />
   if (activeTool === 'brandAccess') return <BrandAccess onRunComplete={onRunComplete} />
   if (activeTool === 'visibility') return <VisibilityCheck onRunComplete={onRunComplete} />
   if (activeTool === 'fanout') return <FanOut onRunComplete={onRunComplete} />
@@ -1743,6 +1772,8 @@ const legalContent = {
         heading: 'Data We Process',
         body: [
           'We process account data such as email address and name, authentication data handled by Supabase Auth, and the prompts, URLs, settings, and generated results you save in your workspace.',
+          'If you subscribe to a paid plan, payment is handled by Stripe. We receive your plan, subscription status, and a customer reference from Stripe; we do not receive or store your full card details.',
+          'If you connect Google Search Console, we store an encrypted access token for your Google account and read search performance data (queries, pages, clicks, impressions, and positions) for the properties you select. Access is read-only, and the keywords you choose to track are saved in your workspace.',
           'We also process technical data such as IP address, request metadata, and security logs through our hosting and infrastructure providers.',
         ],
       },
@@ -1758,6 +1789,15 @@ const legalContent = {
         body: [
           'We use Supabase for authentication and database storage, Vercel for hosting, and OpenRouter/OpenAI-compatible model providers for AI analysis requests.',
           'AI analysis inputs may be transmitted to the configured model provider to generate results.',
+          'We use Stripe for payments and billing, and Google APIs for Search Console data and PageSpeed Insights tests. URLs you submit for a Core Web Vitals test are sent to Google PageSpeed Insights.',
+        ],
+      },
+      {
+        heading: 'Google User Data',
+        body: [
+          'Search Console data is used only to show you the reports in this application. It is not sold, not used for advertising, not used to train AI models, and not shared with third parties except the infrastructure providers named above.',
+          'Our use of information received from Google APIs adheres to the Google API Services User Data Policy, including the Limited Use requirements.',
+          'You can disconnect Search Console at any time in the application. Disconnecting revokes the access token and deletes it from our database.',
         ],
       },
       {
@@ -1775,7 +1815,15 @@ const legalContent = {
       {
         heading: 'Service',
         body: [
-          'GEO OPTIMIZER AI provides tools for AI search visibility analysis, content checks, prompt research, crawler simulation, and benchmarking.',
+          'GEO OPTIMIZER AI provides tools for AI search visibility analysis, site audits and crawls, Search Console reporting, content checks, prompt research, crawler simulation, and benchmarking.',
+        ],
+      },
+      {
+        heading: 'Plans, Billing, and Cancellation',
+        body: [
+          'The service is offered as a free plan and as paid subscriptions billed monthly or yearly in advance through Stripe. Each plan includes monthly usage allowances that reset at the start of each calendar month and do not carry over.',
+          'Paid subscriptions renew automatically at the end of each billing period until cancelled. You can cancel or change your plan at any time in the billing portal; after cancellation the plan stays active until the end of the period already paid for.',
+          'Prices are shown excluding VAT where applicable. If a payment fails or is disputed, paid features may be paused until the matter is resolved. Statutory consumer rights remain unaffected.',
         ],
       },
       {
@@ -1783,6 +1831,7 @@ const legalContent = {
         body: [
           'You are responsible for the accuracy, legality, and rights clearance of content, URLs, prompts, and data you submit.',
           'You must not use the service for unlawful, harmful, abusive, or security-testing activity against third parties without authorization.',
+          'Site audits and crawls send automated requests to the websites you enter. Only crawl websites you own or are permitted to analyze.',
         ],
       },
       {
@@ -1807,6 +1856,7 @@ const legalContent = {
         heading: 'Essential Cookies',
         body: [
           'We use essential authentication cookies to keep users signed in and protect sessions. These cookies are required for the application to function.',
+          'When you connect Google Search Console, a short-lived security cookie protects the sign-in and is removed when the connection completes.',
         ],
       },
       {

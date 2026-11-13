@@ -46,3 +46,30 @@ export function Kpi({ label, value, note }) {
 export function Notice({ kind = 'info', children }) {
   return <p className={`notice notice-${kind}`}>{children}</p>
 }
+
+export function Tabs({ value, onChange, options, label }) {
+  return (
+    <div className="interval-toggle tabs" role="group" aria-label={label}>
+      {options.map((option) => <button type="button" key={option.id} className={value === option.id ? 'active' : ''} onClick={() => onChange(option.id)}>{option.label}</button>)}
+    </div>
+  )
+}
+
+// Small line chart. Set invert for metrics where a lower value is better (rank position).
+export function Spark({ values, invert = false, label }) {
+  const points = values.filter((value) => value !== null && value !== undefined)
+  if (points.length < 2) return <span className="muted">–</span>
+  const min = Math.min(...points)
+  const max = Math.max(...points)
+  const y = (value) => {
+    const share = max === min ? 0.5 : (value - min) / (max - min)
+    return 3 + (invert ? share : 1 - share) * 22
+  }
+  return <svg className="spark" viewBox="0 0 120 28" role="img" aria-label={label}><polyline points={points.map((value, index) => `${(index * 120) / (points.length - 1)},${y(value)}`).join(' ')} /></svg>
+}
+
+export function Delta({ value, digits = 0, suffix = '' }) {
+  if (value === null || value === undefined) return <span className="muted">new</span>
+  if (!value) return <span className="muted">0</span>
+  return <span className={value > 0 ? 'delta-up' : 'delta-down'}>{value > 0 ? '▲' : '▼'} {Math.abs(value).toLocaleString('en-US', { maximumFractionDigits: digits })}{suffix}</span>
+}

@@ -17,3 +17,13 @@ export function downloadCsv(filename, rows) {
   link.remove()
   URL.revokeObjectURL(url)
 }
+
+export const fmt = (value) => (value === null || value === undefined ? '–' : Number(value).toLocaleString('en-US'))
+export const signed = (value, digits = 0) => (value === null || value === undefined ? '–' : `${value > 0 ? '+' : ''}${Number(value).toLocaleString('en-US', { maximumFractionDigits: digits })}`)
+export const hostOf = (url) => {
+  try {
+    return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, '')
+  } catch {
+    return ''
+  }
+}

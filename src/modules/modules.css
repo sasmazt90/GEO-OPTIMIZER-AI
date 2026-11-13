@@ -99,3 +99,30 @@ td > .pill:first-child { margin-left: 0; }
 .brief h4 { margin: 14px 0 6px; color: var(--navy); font-size: 14px; }
 .brief ul { margin: 0; padding-left: 18px; color: #344054; font-size: 13.5px; line-height: 1.55; }
 .link-button { border: 0; background: none; padding: 0; color: var(--accent-dark); font-weight: 700; font-size: 12.5px; text-decoration: underline; }
+.tabs { flex-wrap: wrap; margin-bottom: 0; }
+.tool-surface > .tabs { margin-bottom: 18px; }
+.pill-warn { color: #92400e; background: #fffbeb; border-color: #fde68a; }
+.delta-up { color: #047857; font-weight: 700; white-space: nowrap; }
+.delta-down { color: #be123c; font-weight: 700; white-space: nowrap; }
+.kpi small .delta-up, .kpi small .delta-down { font-size: 12px; }
+.wrap-cell { overflow-wrap: anywhere; min-width: 140px; }
+.inline-form { display: flex; gap: 10px; margin: 0 0 14px; }
+.inline-form input { flex: 1; min-width: 0; }
+.url-list { display: grid; gap: 6px; max-height: 260px; overflow: auto; color: #344054; }
+.check-option { display: grid; grid-template-columns: 20px 1fr; gap: 10px; align-items: start; margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); color: #475467; font-size: 13.5px; line-height: 1.5; cursor: pointer; }
+.check-option input { width: 18px; height: 18px; min-height: 0; margin: 2px 0 0; padding: 0; accent-color: var(--accent); }
+.check-option strong { color: var(--navy); }
+.history-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.history-head .spark { width: 200px; height: 36px; }
+.compare-table td, .compare-table th { vertical-align: top; }
+.compare-table .own-cell { background: var(--accent-soft); }
+.code-input, .code-output { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+.code-output { margin: 0; padding: 14px; max-height: 520px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: #0f172a; color: #e2e8f0; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sentiment-bar .mid { background: #f59e0b; }
+.meters { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.panel-title .pill { vertical-align: middle; }
+.panel-title svg { vertical-align: -3px; }
+@media (max-width: 920px) {
+  .meters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .inline-form { flex-direction: column; }
+}
