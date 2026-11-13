@@ -27,3 +27,5 @@ output
 *.sw?
 
 .vercel
+
+test/e2e/shots/

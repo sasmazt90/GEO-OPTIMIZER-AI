@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   BarChart3,
   Bot,
@@ -12,42 +12,53 @@ import {
   FilePenLine,
   History,
   KeyRound,
+  LineChart,
   Loader2,
   LogOut,
   Menu,
   UserRound,
+  ScanSearch,
   Search,
   ShieldCheck,
   Wand2,
   X,
 } from 'lucide-react'
 import './App.css'
+import './modules/modules.css'
+import { api } from './api.js'
+import Plans from './modules/Plans.jsx'
+import SiteAudit from './modules/SiteAudit.jsx'
+import Tracking from './modules/Tracking.jsx'
 
 const languages = ['English', 'Turkish', 'German', 'French', 'Spanish', 'Italian', 'Portuguese']
 const countries = ['Worldwide', 'United States', 'United Kingdom', 'Turkey', 'Germany', 'France', 'Spain', 'Canada']
 
 const tools = [
+  { id: 'tracking', label: 'Visibility Tracking', icon: LineChart, tag: 'Measured share of AI answers over time' },
+  { id: 'audit', label: 'Site Audit', icon: ScanSearch, tag: 'Technical SEO and AI readiness' },
   { id: 'brandAccess', label: 'Brand & Access', icon: ShieldCheck, tag: 'Entity and crawler readiness' },
   { id: 'visibility', label: 'AI Visibility Check', icon: Eye, tag: 'Model presence by query' },
   { id: 'fanout', label: 'Query Intelligence', icon: Search, tag: 'Query expansion' },
   { id: 'research', label: 'Prompt Research', icon: BrainCircuit, tag: 'Prompt universe' },
   { id: 'contentStudio', label: 'Content Studio', icon: FilePenLine, tag: 'Create and audit GEO content' },
-  { id: 'benchmark', label: 'Benchmark', icon: BarChart3, tag: 'Top brands' },
+  { id: 'benchmark', label: 'Benchmark', icon: BarChart3, tag: 'Brands named in live answers' },
 ]
 
 const toolDescriptions = {
   brand: 'Checks whether a brand is clearly recognized as an entity by AI systems. It reviews brand name, domain, country, and language to assess entity clarity, trust signals, schema/sameAs needs, and concrete improvement actions.',
-  crawler: 'Tests whether the website responds successfully to AI crawler user-agents such as GPTBot, ChatGPT-User, OAI-SearchBot, Googlebot, PerplexityBot, ClaudeBot, and others.',
-  visibility: 'Checks whether a selected brand is likely to appear for a specific prompt across AI answer engines and model surfaces. It returns model-by-model presence, confidence, evidence gaps, and actions to improve visibility.',
+  crawler: 'Reads robots.txt and tests the HTTP response for 14 search and AI crawlers, including OAI-SearchBot, ChatGPT-User, GPTBot, PerplexityBot, ClaudeBot, Googlebot and Bingbot.',
+  visibility: 'Asks your prompt on each selected AI model three times, live, and counts how often the brand is named. Surfaces without a public API are marked as not measurable.',
   fanout: 'Analyzes how an AI search system may expand one query into related sub-queries, comparisons, alternatives, research intents, pricing questions, and implementation paths.',
   research: 'Creates monitorable AI search prompt sets for brand visibility, including brand, competitor, topic, persona, SEO keyword, and Search Console prompt categories.',
   landing: 'Creates an answer-first GEO landing page structure with page blocks, FAQs, proof sections, comparison context, schema recommendations, and extractable answer snippets.',
   content: 'Creates GEO/LLMO-ready content or a content brief based on prompts, URLs, brand context, content type, and target length so AI systems can extract clear answers.',
   check: 'Reviews an existing URL or pasted content for GEO compliance. It scores answerability, entity clarity, evidence, structure, schema, freshness, and extraction quality.',
-  benchmark: 'Ranks the top 10 brands likely to appear for a prompt in the selected country and language using likely AI visibility, topical authority, citation footprint, and sentiment.',
+  benchmark: 'Asks your prompt on four AI models three times each and counts which brands the answers name. The ranking is a count of live answers, not an estimate.',
 }
 
 const groupDescriptions = {
+  tracking: 'Track a set of buyer questions for one brand. Every question is asked live on each AI model several times; mentions, position and cited sources are counted and charted over time.',
+  audit: 'A rule-based audit of crawl access, indexability, on-page SEO, structured data and content extractability. The same page always gets the same score.',
   brandAccess: 'Run brand entity checks and AI crawler access simulations from one place.',
   visibility: toolDescriptions.visibility,
   fanout: toolDescriptions.fanout,
@@ -57,7 +68,7 @@ const groupDescriptions = {
 }
 
 const promptModes = ['Your brand', 'SEO keywords', 'A website', 'Advanced', 'Query Fan Out']
-const crawlers = ['GPTBot', 'ChatGPT-User', 'OAI-SearchBot', 'Googlebot', 'GoogleOther', 'PerplexityBot', 'ClaudeBot', 'Grok']
+const crawlers = ['OAI-SearchBot', 'ChatGPT-User', 'GPTBot', 'PerplexityBot', 'Perplexity-User', 'Claude-SearchBot', 'Claude-User', 'ClaudeBot', 'Googlebot', 'Google-Extended', 'Bingbot', 'Applebot-Extended', 'CCBot', 'meta-externalagent']
 const queryIntelligenceSurfaces = ['Google AI Overview', 'Google AI Mode', 'ChatGPT', 'Perplexity', 'Claude', 'Gemini', 'Microsoft Copilot']
 const contentSettingOptions = ['Include expert quotes', 'Include FAQs', 'Include a comparison table', 'Include external links', 'Include a CTA']
 const fanoutModeHelp = {
@@ -69,13 +80,13 @@ const fanoutModeHelp = {
 }
 const resultPlaceholders = {
   brand: 'Enter a brand, domain, country, and language to check entity clarity across AI answer surfaces.',
-  visibility: 'Enter a brand and prompt to check likely presence across AI answer engines and model surfaces.',
+  visibility: 'Enter a brand and prompt to count how often live AI answers name the brand.',
   fanout: 'Enter a prompt and select a mode to see how AI search systems may expand it into related sub-queries.',
   research: 'Complete the research inputs to generate a monitoring prompt set for brand, competitor, persona, topic, and SEO visibility.',
   landing: 'Fill in the landing page brief to generate an answer-first GEO page structure.',
   content: 'Provide a prompt or URLs to create GEO-ready content or a content brief.',
   check: 'Paste content or add a URL to receive a GEO compliance review.',
-  benchmark: 'Enter a prompt, country, and language to rank likely visible brands.',
+  benchmark: 'Enter a prompt, country, and language to count which brands live AI answers name.',
 }
 
 const howItWorksContent = {
@@ -90,20 +101,20 @@ const howItWorksContent = {
   },
   crawler: {
     title: 'How crawler simulation works',
-    body: 'This simulation tests whether common AI crawler user-agents can reach the submitted URL at the HTTP response level.',
+    body: 'This check combines the site\'s robots.txt rules with a live request for each crawler user-agent.',
     steps: [
-      'It sends live requests using user-agent strings for GPTBot, ChatGPT-User, OAI-SearchBot, Googlebot, PerplexityBot, ClaudeBot, and related crawlers.',
-      'It reports whether each crawler received an allowed response or was blocked/erroring.',
-      'It does not replace robots.txt, sitemap, rendered HTML, or server log analysis; those remain separate follow-up checks.',
+      'It parses robots.txt and evaluates the rule that applies to each crawler for the submitted URL.',
+      'It sends a live request with each crawler\'s user-agent and reports the HTTP status.',
+      'Requests come from our server, not the crawler\'s own network, so IP-based bot rules can differ: confirm blocks in your server logs. For sitemap, schema and content checks, run a Site Audit.',
     ],
   },
   visibility: {
     title: 'How model presence checking works',
-    body: 'This tool checks whether a brand is likely to appear for a specific prompt across selected AI answer surfaces.',
+    body: 'This tool measures whether a brand is named for a specific prompt on the selected AI models.',
     steps: [
-      'For supported OpenRouter models, it runs direct answer probes and checks whether the brand appears naturally in the answer.',
-      'For surfaces without a direct query API, such as Google AI Overview or Copilot, it marks findings as an assessment instead of pretending to have live access.',
-      'The result shows model-by-model presence, confidence, evidence gaps, and next actions to improve inclusion.',
+      'For ChatGPT, Claude, Gemini and Perplexity models it asks the prompt three times each and checks every answer for the brand name.',
+      'Surfaces without a public query API, such as Google AI Overviews or Copilot, are marked as not measurable instead of being guessed.',
+      'The score is the share of collected answers that name the brand, shown with a 95% interval. API answers can differ from the consumer apps, which add personalisation and live search.',
     ],
   },
   fanout: {
@@ -153,11 +164,11 @@ const howItWorksContent = {
   },
   benchmark: {
     title: 'How benchmark ranking works',
-    body: 'This benchmark estimates which brands are most likely to appear for a prompt in the selected country and language.',
+    body: 'This benchmark counts which brands live AI answers name for a prompt in the selected country and language.',
     steps: [
-      'It uses your prompt, market, language, and optional industry filter to define the competitive answer context.',
-      'It ranks ten likely visible brands by topical authority, citation footprint, sentiment, and prompt relevance.',
-      'The result helps you compare visibility competitors and identify the signals your brand needs to improve.',
+      'It asks your prompt on four AI models, three times each, for the selected market and language.',
+      'Brand names are extracted from the answers and then counted against the answer text, so every number is a count of real answers.',
+      'Twelve answers are a snapshot. To follow a market over time, track the prompt in Visibility Tracking.',
     ],
   },
 }
@@ -229,9 +240,9 @@ function buildReportWorkbook(toolId, data) {
     tableHtml('Action Items', ['Recommendation'], bullets.map((item) => [item])),
     tableHtml('Generated Queries', ['Query', 'Intent'], (data.queries || []).map((item) => [item.query || item, item.intent || item.reason || ''])),
     tableHtml('Surface Insights', ['AI Surface', 'Fan-Out Behavior', 'Query Patterns'], (data.surfaceInsights || []).map((row) => [row.surface, row.behavior, row.queryPatterns])),
-    tableHtml('Model Presence', ['AI Surface', 'Presence', 'Confidence', 'Evidence / Gap', 'Next Action'], (data.models || []).map((row) => [row.model || row.surface, row.presence || row.status, row.confidence || '-', row.evidence || row.reason || '-', row.nextAction || row.action || '-'])),
-    tableHtml('Top Brands', ['Rank', 'Brand', 'Visibility', 'Status', 'Primary Driver'], (data.brands || []).map((row, index) => [row.rank || index + 1, row.brand, row.share, row.sentiment, row.reason])),
-    tableHtml('Crawler Results', ['Crawler', 'Status', 'HTTP Code'], (data.rows || []).map((row) => [row.name, row.status, row.code])),
+    tableHtml('Model Presence', ['AI Surface', 'Presence', 'Answers', 'Evidence', 'Next Action'], (data.models || []).map((row) => [row.model || row.surface, row.presence || row.status, row.confidence || '-', row.evidence || row.reason || '-', row.nextAction || row.action || '-'])),
+    tableHtml('Brands named in live answers', ['Rank', 'Brand', 'Mention rate', 'Answers naming it', 'Detail'], (data.brands || []).map((row, index) => [row.rank || index + 1, row.brand, row.share, row.sentiment, row.reason])),
+    tableHtml('Crawler Results', ['Crawler', 'Operator', 'Status', 'robots.txt', 'Rule', 'HTTP'], (data.rows || []).map((row) => [row.name, row.operator, row.status, row.robots, row.rule, row.code])),
     '</body></html>',
   ].join('')
   return html
@@ -252,16 +263,26 @@ function downloadExcelReport(toolId, data) {
 }
 
 function App() {
-  const [activeTool, setActiveTool] = useState('brandAccess')
+  const [activeTool, setActiveTool] = useState('tracking')
   const [mobileNav, setMobileNav] = useState(false)
   const [navCollapsed, setNavCollapsed] = useState(false)
   const [legalPage, setLegalPage] = useState('')
-  const [accountPage, setAccountPage] = useState(false)
+  const [accountPage, setAccountPage] = useState(() => new URLSearchParams(window.location.search).has('billing'))
   const [authLoading, setAuthLoading] = useState(true)
   const [user, setUser] = useState(null)
   const [runs, setRuns] = useState([])
   const [recoveryToken, setRecoveryToken] = useState('')
+  const [account, setAccount] = useState(null)
+  const [billingNotice] = useState(() => new URLSearchParams(window.location.search).get('billing') || '')
   const active = tools.find((tool) => tool.id === activeTool) || tools[0]
+
+  const loadAccount = useCallback(async () => {
+    try {
+      setAccount(await api('GET', '/api/account'))
+    } catch {
+      // the account panel is optional; tools keep working without it
+    }
+  }, [])
 
   async function loadRuns() {
     const response = await fetch('/api/runs', { credentials: 'include' })
@@ -269,6 +290,7 @@ function App() {
       const data = await response.json()
       setRuns(data.runs || [])
     }
+    loadAccount()
   }
 
   useEffect(() => {
@@ -309,12 +331,16 @@ function App() {
       }
     }
     loadSession()
+    if (new URLSearchParams(window.location.search).has('billing')) window.history.replaceState({}, document.title, window.location.pathname)
+    // Runs once on mount; loadRuns is recreated each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
     setUser(null)
     setRuns([])
+    setAccount(null)
     setAccountPage(false)
   }
 
@@ -349,7 +375,7 @@ function App() {
 
   return (
     <div className="app-shell">
-      <AppHeader user={user} logout={logout} onMenu={() => setMobileNav(true)} onProfile={() => setAccountPage(true)} />
+      <AppHeader user={user} account={account} logout={logout} onMenu={() => setMobileNav(true)} onProfile={() => setAccountPage(true)} />
 
       {mobileNav && (
         <div className="mobile-drawer">
@@ -403,13 +429,13 @@ function App() {
         <section className="tool-surface">
           <div className="current-tool">
             <h1>{accountPage ? 'Account Settings' : active.label}</h1>
-            <p>{accountPage ? 'Manage your profile and sign-in details' : active.tag}</p>
+            <p>{accountPage ? 'Plan, usage, profile and sign-in details' : active.tag}</p>
           </div>
           {!accountPage && <ToolIntro>{groupDescriptions[activeTool]}</ToolIntro>}
           {accountPage ? (
-            <AccountSettings user={user} onBack={() => setAccountPage(false)} onUpdated={setUser} />
+            <AccountSettings user={user} account={account} billingNotice={billingNotice} onBack={() => setAccountPage(false)} onUpdated={setUser} />
           ) : (
-            <ToolRouter activeTool={activeTool} onRunComplete={loadRuns} />
+            <ToolRouter activeTool={activeTool} onRunComplete={loadRuns} account={account} onUsage={loadAccount} />
           )}
         </section>
       </main>
@@ -418,7 +444,7 @@ function App() {
   )
 }
 
-function AppHeader({ user, logout, onMenu, onProfile }) {
+function AppHeader({ user, account, logout, onMenu, onProfile }) {
   return (
     <header className="topbar">
       <button className="icon-button mobile-only" onClick={onMenu} aria-label="Open navigation">
@@ -428,11 +454,12 @@ function AppHeader({ user, logout, onMenu, onProfile }) {
         <GeoLogo />
         <div>
           <strong>GEO OPTIMIZER AI</strong>
-          <small>AI visibility workspace</small>
+          <small>SEO and AI visibility platform</small>
         </div>
       </div>
       {user && (
         <div className="account-chip">
+          {account && <button className="plan-chip" onClick={onProfile} title="Plan and usage">{account.planLabel} · {Math.max(0, account.limits.probes - account.usage.probe).toLocaleString()} credits</button>}
           <button className="profile-button" onClick={onProfile} aria-label="Open profile settings">
             <UserRound size={17} />
             <span>{user.name}</span>
@@ -487,7 +514,7 @@ function LegalPage({ page, onBack }) {
   )
 }
 
-function AccountSettings({ user, onBack, onUpdated }) {
+function AccountSettings({ user, account, billingNotice, onBack, onUpdated }) {
   const [name, setName] = useState(user.name || '')
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' })
   const [message, setMessage] = useState('')
@@ -568,6 +595,9 @@ function AccountSettings({ user, onBack, onUpdated }) {
 
   return (
     <div className="account-stack">
+      {billingNotice === 'success' && <p className="notice notice-success">Payment received. Your plan updates within a few seconds; refresh if it still shows the old plan.</p>}
+      {billingNotice === 'cancelled' && <p className="notice">Checkout was cancelled. Nothing was charged.</p>}
+      <Plans account={account} />
       {message && <p className="auth-success account-message">{message}</p>}
       {error && <p className="auth-error account-message">{error}</p>}
       <section className="panel account-panel">
@@ -698,6 +728,7 @@ function AuthScreen({ onAuthed, recoveryToken, onPasswordUpdated }) {
 }
 
 function primaryToolForRun(type) {
+  if (type === 'audit') return 'audit'
   if (type === 'brand' || type === 'crawler') return 'brandAccess'
   if (type === 'landing' || type === 'content' || type === 'check') return 'contentStudio'
   if (type === 'visibility') return 'visibility'
@@ -720,7 +751,9 @@ function SubToolSwitch({ value, onChange, options }) {
   )
 }
 
-function ToolRouter({ activeTool, onRunComplete }) {
+function ToolRouter({ activeTool, onRunComplete, account, onUsage }) {
+  if (activeTool === 'tracking') return <Tracking key={account ? 'ready' : 'loading'} account={account} onUsage={onUsage} />
+  if (activeTool === 'audit') return <SiteAudit account={account} onRunComplete={onRunComplete} />
   if (activeTool === 'brandAccess') return <BrandAccess onRunComplete={onRunComplete} />
   if (activeTool === 'visibility') return <VisibilityCheck onRunComplete={onRunComplete} />
   if (activeTool === 'fanout') return <FanOut onRunComplete={onRunComplete} />
@@ -821,17 +854,18 @@ function ResultPanel({ toolId, result, loading, error, wide = false }) {
   if (!result && !loading && !error) return <EmptyResult toolId={toolId} />
   if (loading) return <ProcessingPanel toolId={toolId} wide={wide} />
   const data = result || {}
-  const hideScore = ['fanout', 'research', 'landing', 'content'].includes(toolId)
+  const hideScore = ['fanout', 'research', 'landing', 'content'].includes(toolId) || data.hideScore
+  const scoreLabel = toolId === 'check' ? (data.measured ? 'Rule-based score' : 'AI assessment') : ['visibility', 'benchmark'].includes(toolId) ? 'Visibility rate %' : 'AI assessment'
   return (
     <section className={`panel result-panel result-${toolId}${wide ? ' wide' : ''}`}>
       <div className="result-header-grid">
         <div className="result-top">
           <p className="eyeline">Result</p>
-          <strong>{data.title || (loading ? 'Analysis in progress' : 'Analysis result')}</strong>
+          <strong>{data.title || (loading ? 'Analysis in progress' : 'Analysis result')}{data.measured && <span className="measured-badge">Measured</span>}</strong>
         </div>
         <div className="result-side-actions">
           <button type="button" className="ghost-button small" onClick={() => downloadExcelReport(toolId, data)}><Download size={16} />Download Excel Report</button>
-          {!hideScore && <ScoreBlock score={data.score} loading={loading} label={toolId === 'check' ? 'Compliance Score' : 'Confidence Score'} />}
+          {!hideScore && <ScoreBlock score={data.score} loading={loading} label={scoreLabel} />}
         </div>
       </div>
       {error ? (
@@ -1031,7 +1065,7 @@ function ModelPresenceTable({ rows }) {
     <ResultSection title="Model presence by surface">
       <div className="table-wrap">
         <table>
-          <thead><tr><th>AI Surface</th><th>Presence</th><th>Confidence</th><th>Evidence / Gap</th><th>Next Action</th></tr></thead>
+          <thead><tr><th>AI Surface</th><th>Presence</th><th>Answers</th><th>Evidence</th><th>Next Action</th></tr></thead>
           <tbody>
             {rows.slice(0, 10).map((row) => (
               <tr key={row.model || row.surface}>
@@ -1101,14 +1135,14 @@ function BenchmarkTable({ rows }) {
     rank: row.rank || index + 1,
     brand: row.brand || `Brand ${index + 1}`,
     share: typeof row.share === 'number' ? `${row.share}%` : row.share,
-    sentiment: typeof row.sentiment === 'number' ? (row.sentiment >= 85 ? 'Leader' : row.sentiment >= 74 ? 'Challenger' : 'Emerging') : row.sentiment,
-    reason: row.reason || 'Entity strength',
+    sentiment: String(row.sentiment ?? '-'),
+    reason: row.reason || '-',
   }))
   return (
-    <ResultSection title="Top 10 brands">
+    <ResultSection title="Brands named in live answers">
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Rank</th><th>Brand</th><th>Visibility</th><th>Status</th><th>Primary driver</th></tr></thead>
+          <thead><tr><th>Rank</th><th>Brand</th><th>Mention rate</th><th>Answers naming it</th><th>Detail</th></tr></thead>
           <tbody>{tableRows.map((row) => <tr key={row.rank}><td>{row.rank}</td><td>{row.brand}</td><td>{row.share}</td><td><span className="status-pill">{row.sentiment}</span></td><td>{row.reason}</td></tr>)}</tbody>
         </table>
       </div>
@@ -1120,7 +1154,6 @@ function inferredMetrics(toolId, data) {
   const score = Number(data.score) || 0
   if (toolId === 'brand') return [{ label: 'Entity Signals', value: score >= 80 ? 'Strong' : score >= 60 ? 'Medium' : 'Weak' }, { label: 'Market Context', value: data.context || 'Needs review' }]
   if (toolId === 'check') return [{ label: 'Answerability', value: score >= 80 ? 'High' : 'Needs work' }, { label: 'Fix Priority', value: score >= 75 ? 'Medium' : 'High' }]
-  if (toolId === 'benchmark') return [{ label: 'Brands Ranked', value: '10' }, { label: 'Market Lens', value: 'AI visibility' }]
   return [{ label: 'Output Depth', value: data.depth || 'Structured' }, { label: 'Next Step', value: 'Review' }]
 }
 
@@ -1278,7 +1311,7 @@ function BrandEntity({ onRunComplete }) {
     setForm(emptyForm)
   }
   return (
-    <ToolFrame toolId="brand" title="Does AI know your brand?" badge="Real-time entity verification" result={result} loading={loading} error={error} onRun={() => run(form)} onReset={resetTool} action="Check AI Authority" newAction="New Brand Entity Check">
+    <ToolFrame toolId="brand" title="Does AI know your brand?" badge="AI assessment grounded in your live page" result={result} loading={loading} error={error} onRun={() => run(form)} onReset={resetTool} action="Check AI Authority" newAction="New Brand Entity Check">
       <div className="two-col">
         <Field label="Brand name" required><input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder="e.g. Notion, Stripe, Acme" /></Field>
         <Field label="Domain" required><input value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })} placeholder="https://example.com" /></Field>
@@ -1311,7 +1344,7 @@ function VisibilityCheck({ onRunComplete }) {
     setForm({ ...form, models: nextModels.length ? nextModels : [model] })
   }
   return (
-    <ToolFrame toolId="visibility" title="Check AI model presence" badge="Model-by-model visibility" result={result} loading={loading} error={error} onRun={() => run(form)} onReset={resetTool} action="Check Model Presence" newAction="New Visibility Check">
+    <ToolFrame toolId="visibility" title="Check AI model presence" badge="Three live answers per model" result={result} loading={loading} error={error} onRun={() => run(form)} onReset={resetTool} action="Check Model Presence" newAction="New Visibility Check">
       <div className="two-col">
         <Field label="Brand name" required><input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder="e.g. Bioderma, Stripe, Acme" /></Field>
         <Field label="Domain"><input value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })} placeholder="https://example.com" /></Field>
@@ -1359,7 +1392,7 @@ function CrawlerSimulation({ onRunComplete }) {
       const response = await fetch('/api/crawl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ url }) })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'Crawler simulation failed.')
-      setRows(data.rows)
+      setRows(data.rows || [])
       await onRunComplete?.()
     } catch (crawlError) {
       setError(crawlError.message)
@@ -1369,7 +1402,7 @@ function CrawlerSimulation({ onRunComplete }) {
   }
   return (
     <>
-      <div className="tool-head"><div><h2>Run an AI search crawlability check</h2><span>AI search</span></div><button className="ghost-button" onClick={resetTool}>Reset</button></div>
+      <div className="tool-head"><div><h2>Run an AI crawler access check</h2><span>robots.txt and live HTTP</span></div><button className="ghost-button" onClick={resetTool}>Reset</button></div>
       {resultMode ? (
         <div className="result-workspace">
           <CrawlerResultPanel rows={rows} loading={loading} error={error} wide />
@@ -1388,7 +1421,7 @@ function CrawlerSimulation({ onRunComplete }) {
             <Field label="Website URL" required><input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com" /></Field>
             <div className="crawler-grid">
               {crawlers.map((name) => (
-                <div className="crawler-row" key={name}><CheckCircle2 size={16} /><span>{name}</span><strong>Will test</strong></div>
+                <div className="crawler-row" key={name}><CheckCircle2 size={16} /><span>{name}</span><strong>Will check</strong></div>
               ))}
             </div>
             <div className="form-footer"><p>Results are saved to your workspace.</p><button className="primary-button" onClick={run} disabled={loading}>{loading ? <Loader2 className="spin" size={17} /> : <Bot size={17} />}Start Crawler Simulation</button></div>
@@ -1429,7 +1462,7 @@ function CrawlerResultPanel({ rows, loading, error, wide = false }) {
       <section className={`panel result-panel crawler-result${wide ? ' wide' : ''}`}>
         <p className="eyeline">Result</p>
         <strong>No crawl test yet</strong>
-        <p className="result-summary">Run the simulation to test how your server responds to common AI crawler user-agents. This checks HTTP access behavior; it does not replace a full robots.txt or log-file audit.</p>
+        <p className="result-summary">Run the check to see, for each search and AI crawler, what robots.txt allows and how your server responds to its user-agent.</p>
       </section>
     )
   }
@@ -1446,21 +1479,21 @@ function CrawlerResultPanel({ rows, loading, error, wide = false }) {
           <button type="button" className="ghost-button small" onClick={() => downloadExcelReport('crawler', {
             title: 'Crawler Access Result',
             score: rows.length ? Math.round((allowed / rows.length) * 100) : 0,
-            summary: blocked ? 'Some crawler user-agents could not access the URL.' : 'All tested crawler user-agents received successful HTTP responses.',
+            summary: blocked ? 'Some crawlers are disallowed in robots.txt or blocked at the server.' : 'All tested crawlers are allowed in robots.txt and received successful HTTP responses.',
             metrics: [{ label: 'Allowed', value: allowed }, { label: 'Blocked / Error', value: blocked }],
             rows,
           })}><Download size={16} />Download Excel Report</button>
         </div>
       </div>
-      {error ? <p className="result-error">{error}</p> : <p className="result-summary">{loading ? 'Testing crawler user-agents...' : blocked ? 'Some AI crawlers could not access the URL. Review bot protection, firewall rules, CDN settings, and robots policies.' : 'The tested AI crawler user-agents received successful HTTP responses.'}</p>}
+      {error ? <p className="result-error">{error}</p> : <p className="result-summary">{loading ? 'Testing crawler user-agents...' : blocked ? 'Some crawlers are disallowed in robots.txt or blocked at the server. Blocking model-training crawlers is a choice; blocking search and answer crawlers removes you from AI answers.' : 'All tested crawlers are allowed in robots.txt and received successful HTTP responses.'}</p>}
       <MetricGrid metrics={[{ label: 'Allowed', value: allowed }, { label: 'Blocked / Error', value: blocked }]} />
       <StatusBoard sections={{
-        done: allowed ? [`${allowed} tested crawler user-agents received accessible HTTP responses.`] : [],
-        improve: blocked ? ['Review bot protection, firewall, CDN, and rate-limit rules for blocked crawlers.'] : ['Keep this check in your release workflow after CDN, firewall, CMS, or bot-protection changes.'],
-        missing: ['Robots.txt, sitemap exposure, server logs, and rendered HTML extraction still require separate validation.'],
+        done: allowed ? [`${allowed} crawlers are allowed by robots.txt and can fetch the URL.`] : [],
+        improve: blocked ? rows.filter((row) => row.status !== 'Allowed').map((row) => `${row.name} (${row.purpose}): ${row.robots === 'Disallowed' ? `disallowed by robots.txt (${row.rule})` : `server returned ${row.code}`}`) : ['Re-run after CDN, firewall, CMS, or bot-protection changes.'],
+        missing: ['Requests come from our server, so IP-based bot rules may behave differently: confirm in server logs. Run a Site Audit for sitemap, schema and content checks.'],
       }} />
       <div className="crawler-result-list">
-        {rows.map((row) => <div className={row.status === 'Allowed' ? 'crawler-status allowed' : 'crawler-status blocked'} key={row.name}><span>{row.name}</span><strong>{row.status} {row.code}</strong></div>)}
+        {rows.map((row) => <div className={row.status === 'Allowed' ? 'crawler-status allowed' : 'crawler-status blocked'} key={row.name}><span>{row.name} <small>· {row.operator} · {row.purpose}</small></span><strong>{row.status} · robots.txt {String(row.robots).toLowerCase()} · HTTP {row.code}</strong></div>)}
       </div>
     </section>
   )
@@ -1652,7 +1685,7 @@ function Benchmark({ onRunComplete }) {
     }
   }
   return (
-    <ToolFrame toolId="benchmark" title="Benchmark AI visibility" badge="Top 10 brands by prompt, country, and language" result={result} loading={loading} error={error} onRun={run} onReset={resetTool} action="Run Benchmark" newAction="New Benchmark">
+    <ToolFrame toolId="benchmark" title="Benchmark AI visibility" badge="Counted from live answers on four AI models" result={result} loading={loading} error={error} onRun={run} onReset={resetTool} action="Run Benchmark" newAction="New Benchmark">
       <Field label="Search prompt" required><input value={form.prompt} onChange={(e) => setForm({ ...form, prompt: e.target.value })} placeholder="Best CRM software for mid-market teams" /></Field>
       <div className="three-col">
         <Field label="Country"><SelectField value={form.country} onChange={(country) => setForm({ ...form, country })} options={countries} /></Field>

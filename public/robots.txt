@@ -1,0 +1,6 @@
+# GEO Optimizer AI
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://geo-optimizer-ai.sasmaz.digital/sitemap.xml

@@ -1,0 +1,17 @@
+# GEO Optimizer AI
+
+> SEO and generative engine optimization (GEO) platform by SASMAZ DIGITAL SOLUTIONS. It measures how often ChatGPT, Claude, Gemini and Perplexity name a brand, audits technical SEO and AI crawler access, and tracks visibility over time.
+
+## Product
+
+- [GEO Optimizer AI](https://geo-optimizer-ai.sasmaz.digital/): overview, features, method and pricing
+
+## Key facts
+
+- Visibility is measured by asking each tracked question on each AI model several times and counting brand mentions, position and cited sources. Rates carry a 95% confidence interval.
+- The site audit is rule-based (30+ checks) and reproducible; no AI model is involved in the score.
+- Plans: Free (EUR 0, 60 live answer credits per month), Pro (EUR 49 per month, 2,500 credits), Agency (EUR 149 per month, 7,000 credits).
+
+## Company
+
+- [SASMAZ DIGITAL SOLUTIONS](https://www.sasmaz.digital): Munich, Germany
