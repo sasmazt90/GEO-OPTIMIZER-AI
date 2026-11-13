@@ -29,6 +29,22 @@ try {
   await page.locator('svg.trend').waitFor({ timeout: 30000 })
   await page.screenshot({ path: `${out}/tracking.png`, fullPage: true })
 
+  await page.getByText('Citation gap: sources that back competitors but not you').waitFor()
+  await page.getByText('How the answers describe Acme').waitFor()
+  await page.getByRole('button', { name: 'Create content brief' }).first().click()
+  await page.locator('.brief').first().waitFor()
+  await page.getByPlaceholder('Paste the AI answer here').fill('For CRM, HubSpot and Salesforce lead the market; Acme is a newer option.')
+  await page.getByRole('button', { name: 'Analyse answer' }).click()
+  await page.getByText('Brands in order:').waitFor()
+  await page.screenshot({ path: `${out}/tracking-insights.png`, fullPage: true })
+
+  // AI bot traffic from an access log.
+  await page.getByRole('button', { name: 'AI Bot Traffic' }).first().click()
+  const log = Array.from({ length: 40 }, (_, index) => `20.0.0.1 - - [${String(10 + (index % 3)).padStart(2, '0')}/Nov/2026:10:00:00 +0000] "GET /page-${index % 4} HTTP/1.1" ${index % 9 === 0 ? 403 : 200} 100 "-" "Mozilla/5.0; compatible; ${index % 2 ? 'GPTBot/1.1' : 'PerplexityBot/1.0'}"`).join('\n')
+  await page.locator('input[type=file]').setInputFiles({ name: 'access.log', mimeType: 'text/plain', buffer: Buffer.from(log) })
+  await page.getByText('Crawlers that visited').waitFor()
+  await page.screenshot({ path: `${out}/bot-traffic.png`, fullPage: true })
+
   // Site audit.
   await page.getByRole('button', { name: 'Site Audit' }).first().click()
   await page.getByPlaceholder('https://example.com').fill('acme.com')
@@ -53,6 +69,9 @@ try {
   await page.screenshot({ path: `${out}/plans-mobile.png`, fullPage: false })
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)
   if (overflow) errors.push('page scrolls horizontally at 390px')
+} catch (error) {
+  errors.push(error.message.split('\n')[0])
+  await browser.contexts()[0]?.pages()[0]?.screenshot({ path: `${out}/failure.png`, fullPage: true }).catch(() => {})
 } finally {
   await browser.close()
   server.kill()

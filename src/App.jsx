@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   BarChart3,
+  Activity,
   Bot,
   BrainCircuit,
   CheckCircle2,
@@ -26,6 +27,7 @@ import {
 import './App.css'
 import './modules/modules.css'
 import { api } from './api.js'
+import BotTraffic from './modules/BotTraffic.jsx'
 import Plans from './modules/Plans.jsx'
 import SiteAudit from './modules/SiteAudit.jsx'
 import Tracking from './modules/Tracking.jsx'
@@ -36,6 +38,7 @@ const countries = ['Worldwide', 'United States', 'United Kingdom', 'Turkey', 'Ge
 const tools = [
   { id: 'tracking', label: 'Visibility Tracking', icon: LineChart, tag: 'Measured share of AI answers over time' },
   { id: 'audit', label: 'Site Audit', icon: ScanSearch, tag: 'Technical SEO and AI readiness' },
+  { id: 'botTraffic', label: 'AI Bot Traffic', icon: Activity, tag: 'Crawler visits from your access logs' },
   { id: 'brandAccess', label: 'Brand & Access', icon: ShieldCheck, tag: 'Entity and crawler readiness' },
   { id: 'visibility', label: 'AI Visibility Check', icon: Eye, tag: 'Model presence by query' },
   { id: 'fanout', label: 'Query Intelligence', icon: Search, tag: 'Query expansion' },
@@ -58,6 +61,7 @@ const toolDescriptions = {
 
 const groupDescriptions = {
   tracking: 'Track a set of buyer questions for one brand. Every question is asked live on each AI model several times; mentions, position and cited sources are counted and charted over time.',
+  botTraffic: 'Upload your web server access logs to see which AI and search crawlers really visit your site, how often, which pages they request and whether they hit errors. The files never leave your browser.',
   audit: 'A rule-based audit of crawl access, indexability, on-page SEO, structured data and content extractability. The same page always gets the same score.',
   brandAccess: 'Run brand entity checks and AI crawler access simulations from one place.',
   visibility: toolDescriptions.visibility,
@@ -753,6 +757,7 @@ function SubToolSwitch({ value, onChange, options }) {
 
 function ToolRouter({ activeTool, onRunComplete, account, onUsage }) {
   if (activeTool === 'tracking') return <Tracking key={account ? 'ready' : 'loading'} account={account} onUsage={onUsage} />
+  if (activeTool === 'botTraffic') return <BotTraffic />
   if (activeTool === 'audit') return <SiteAudit account={account} onRunComplete={onRunComplete} />
   if (activeTool === 'brandAccess') return <BrandAccess onRunComplete={onRunComplete} />
   if (activeTool === 'visibility') return <VisibilityCheck onRunComplete={onRunComplete} />

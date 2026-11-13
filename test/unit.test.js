@@ -4,7 +4,8 @@ import { runAudit } from '../server/audit.js'
 import { extractPage } from '../server/html.js'
 import { collectCitations } from '../server/llm.js'
 import { buildTasks, summarize } from '../server/measure.js'
-import { analyzeAnswer, domainOf, findName, normalizeText, wilson } from '../server/mentions.js'
+import { analyzeAnswer, brandExcerpts, domainOf, findName, normalizeText, tallyPerception, wilson } from '../server/mentions.js'
+import { parseLogText } from '../src/modules/logParser.js'
 import { BlockedUrlError, assertPublicUrl, createSafeFetch, guardedLookup, isBlockedIp } from '../server/net.js'
 import { evaluateRobots, parseRobots } from '../server/robots.js'
 import { SITE, fakeFetchImpl } from './helpers.js'
@@ -189,4 +190,52 @@ test('collectCitations reads every provider shape', () => {
     choices: [{ message: { annotations: [{ type: 'url_citation', url_citation: { url: 'https://d.com' } }, { type: 'url_citation', url: 'https://a.com' }] } }],
   })
   assert.deepEqual(urls.sort(), ['https://a.com', 'https://b.com', 'https://c.com', 'https://d.com'])
+})
+
+test('citation gap lists sources cited for competitors but not the brand', () => {
+  const project = { brand: 'Acme', aliases: [], domain: 'acme.com', competitors: [{ name: 'Salesforce', aliases: [] }] }
+  const mk = (answer, citations) => ({ status: 'done', surface: 'Perplexity', promptId: 'p', promptText: 'q', answer, citations, model: 'm' })
+  const summary = summarize([
+    mk('Salesforce is best', ['https://g2.com/a', 'https://capterra.com/b']),
+    mk('Salesforce again', ['https://g2.com/c']),
+    mk('Acme and Salesforce', ['https://g2.com/d', 'https://acme.com/x']),
+    mk('No brand here', ['https://wikipedia.org/x']),
+  ], project)
+  assert.deepEqual(summary.citationGap.map((row) => [row.domain, row.competitorOnly, row.withBrand]), [['g2.com', 2, 1], ['capterra.com', 1, 0]])
+  assert.ok(!summary.citationGap.some((row) => row.domain === 'acme.com' || row.domain === 'wikipedia.org'))
+})
+
+test('perception totals are tallied in code and ignore bad labels', () => {
+  const excerpts = brandExcerpts(['Nothing here', 'People like Acme because it is fast', 'ACME is pricey'], ['Acme'])
+  assert.equal(excerpts.length, 2)
+  const tally = tallyPerception([{ sentiment: 'Positive', attributes: ['Fast', 'fast '] }, { sentiment: 'negative', attributes: ['pricey'] }, { sentiment: 'great' }], 3)
+  assert.equal(tally.classified, 2)
+  assert.equal(tally.positive + tally.neutral + tally.negative, 2)
+  assert.deepEqual(tally.attributes[0], { label: 'fast', count: 2 })
+  assert.equal(tallyPerception([], 0), null)
+  assert.equal(tallyPerception([{ sentiment: 'positive' }, { sentiment: 'positive' }], 1).classified, 1, 'never more labels than excerpts')
+})
+
+test('log parser finds AI crawlers in combined and JSON logs', () => {
+  const log = [
+    '66.249.66.1 - - [10/Nov/2026:10:00:00 +0000] "GET /pricing?x=1 HTTP/1.1" 200 5120 "-" "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"',
+    '20.171.0.1 - - [10/Nov/2026:10:05:00 +0000] "GET /blog/a HTTP/1.1" 200 900 "-" "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.1; +https://openai.com/gptbot"',
+    '20.171.0.1 - - [11/Nov/2026:09:00:00 +0000] "GET /blog/a HTTP/1.1" 403 10 "-" "Mozilla/5.0; compatible; GPTBot/1.1"',
+    '1.2.3.4 - - [11/Nov/2026:09:01:00 +0000] "GET / HTTP/1.1" 200 10 "-" "Mozilla/5.0 (Windows NT 10.0) Chrome/130"',
+    '{"timestamp":"2026-11-12T08:00:00Z","path":"/docs","status":200,"userAgent":"Mozilla/5.0; compatible; ChatGPT-User/1.0; +https://openai.com/bot"}',
+    '',
+  ].join('\n')
+  const result = parseLogText(log)
+  assert.equal(result.lines, 5)
+  assert.equal(result.botHits, 4)
+  assert.equal(result.from, '2026-11-10')
+  assert.equal(result.to, '2026-11-12')
+  const gptbot = result.bots.find((bot) => bot.name === 'GPTBot')
+  assert.equal(gptbot.hits, 2)
+  assert.equal(gptbot.errorRate, 50)
+  assert.deepEqual(gptbot.topPaths[0], { path: '/blog/a', count: 2 })
+  assert.deepEqual(gptbot.daily, [1, 1, 0])
+  assert.equal(result.bots.find((bot) => bot.name === 'Googlebot').topPaths[0].path, '/pricing')
+  assert.equal(result.bots.find((bot) => bot.name === 'ChatGPT-User').last, '2026-11-12')
+  assert.ok(result.missing.some((bot) => bot.name === 'PerplexityBot'))
 })

@@ -6,7 +6,8 @@ SEO and generative engine optimization (GEO) platform. It measures how often AI 
 
 | Module | What it does | How the result is produced |
 | --- | --- | --- |
-| Visibility Tracking | Projects, tracked prompts, measurement runs, trend, share of voice, cited sources, CSV export | Every prompt is asked live on each selected model 1 to 5 times; mentions are counted in code. Rates carry a 95% Wilson interval. |
+| Visibility Tracking | Projects, tracked prompts, measurement runs, trend, share of voice, cited sources, citation gap, brand perception, per-prompt content briefs, pasted-answer check for surfaces without an API, CSV export | Every prompt is asked live on each selected model 1 to 5 times; mentions are counted in code. Rates carry a 95% Wilson interval. |
+| AI Bot Traffic | Which AI and search crawlers visit the site, how often, which pages, error rates | Parsed in the browser from uploaded access logs (combined format or JSON lines, .gz supported); nothing is uploaded |
 | Site Audit | 30+ checks: crawl access, indexability, on-page SEO, JSON-LD, content extractability, performance | Rule-based on the raw HTML, robots.txt and sitemap. Same page, same score. No model involved. |
 | Crawler Access | robots.txt verdict and live HTTP status for 14 search and AI crawlers | robots.txt parsed per RFC 9309 plus a request per user-agent |
 | AI Visibility Check | One prompt, three live answers per model | Counted |

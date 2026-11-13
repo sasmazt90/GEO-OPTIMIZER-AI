@@ -1,6 +1,6 @@
 // AI visibility measurement: every tracked prompt is asked on every selected
 // surface several times; results are counted, never estimated.
-import { analyzeAnswer, wilson } from './mentions.js'
+import { analyzeAnswer, brandExcerpts, domainOf, tallyPerception, wilson } from './mentions.js'
 
 export const SURFACES = ['ChatGPT', 'Claude', 'Gemini', 'Perplexity']
 
@@ -27,7 +27,8 @@ function groupBy(items, keyOf) {
 }
 
 // samples: rows with { status, surface, promptId, promptText, answer, citations }.
-export function summarize(samples, project, discoveredNames = []) {
+export function summarize(samples, project, discoveredNames = [], perception = null) {
+  const ownDomain = domainOf(project.domain || '')
   const done = samples.filter((sample) => sample.status === 'done')
   const failed = samples.filter((sample) => sample.status === 'error').length
   const analyzed = done.map((sample) => ({
@@ -80,6 +81,22 @@ export function summarize(samples, project, discoveredNames = []) {
   const citedDomains = [...domainCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15)
     .map(([domain, answers]) => ({ domain, answers, share: Math.round((answers / withCitations.length) * 1000) / 10 }))
 
+  // Citation gap: sources cited in answers that name a competitor but not the brand.
+  const gapCounts = new Map()
+  for (const { analysis } of withCitations) {
+    const namesCompetitor = analysis.mentions.some((mention) => !mention.own)
+    for (const domain of analysis.citedDomains) {
+      if (ownDomain && (domain === ownDomain || domain.endsWith(`.${ownDomain}`))) continue
+      const entry = gapCounts.get(domain) || { domain, answers: 0, withBrand: 0, competitorOnly: 0 }
+      entry.answers += 1
+      if (analysis.brandMentioned) entry.withBrand += 1
+      else if (namesCompetitor) entry.competitorOnly += 1
+      gapCounts.set(domain, entry)
+    }
+  }
+  const citationGap = [...gapCounts.values()].filter((entry) => entry.competitorOnly > 0)
+    .sort((x, y) => y.competitorOnly - x.competitorOnly || y.answers - x.answers).slice(0, 15)
+
   const bySurface = [...groupBy(analyzed, (row) => row.sample.surface).entries()].map(([surface, rows]) => ({
     surface, answers: rows.length, ...rateOf(rows), model: rows[0].sample.model || '', grounded: rows.some((row) => row.analysis.citations.length > 0),
   }))
@@ -109,6 +126,8 @@ export function summarize(samples, project, discoveredNames = []) {
     },
     brands: brands.slice(0, 25),
     citedDomains,
+    citationGap,
+    perception,
     bySurface,
     byPrompt,
     method: 'Counts from live model answers. Rates are the share of answers that mention the brand, with a 95% Wilson interval.',
@@ -136,7 +155,11 @@ export async function processBatch({ store, llm, measurement, project, batchSize
   const samples = await store.listSamples(measurement.id)
   // If extraction fails, tracked brands are still counted exactly.
   const discovered = await llm.extractBrands(samples.filter((sample) => sample.status === 'done').map((sample) => sample.answer)).catch(() => [])
-  const summary = summarize(samples, project, discovered)
+  const excerpts = brandExcerpts(samples.filter((sample) => sample.status === 'done').map((sample) => sample.answer), [project.brand, ...(project.aliases || [])])
+  const perception = excerpts.length
+    ? await llm.classifyPerception(project.brand, excerpts).then((items) => tallyPerception(items, excerpts.length)).catch(() => null)
+    : null
+  const summary = summarize(samples, project, discovered, perception)
   const status = summary.answers === 0 ? 'failed' : 'completed'
   await store.updateMeasurement(measurement.id, { status, summary, completedAt: new Date().toISOString() })
   return { status, remaining: 0, summary }

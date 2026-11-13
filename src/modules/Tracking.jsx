@@ -65,9 +65,76 @@ function Trend({ measurements }) {
   )
 }
 
-function Results({ measurement, project }) {
+function Brief({ projectId, prompt, onUsage }) {
+  const [state, setState] = useState({ loading: false, data: null, error: '' })
+  async function load() {
+    setState({ loading: true, data: null, error: '' })
+    try {
+      setState({ loading: false, data: await api('POST', `/api/projects/${projectId}/brief`, { prompt }), error: '' })
+      onUsage?.()
+    } catch (caught) {
+      setState({ loading: false, data: null, error: caught.message })
+    }
+  }
+  if (state.loading) return <span className="muted"><Loader2 className="spin" size={13} /> Writing brief…</span>
+  if (state.error) return <span className="muted">{state.error}</span>
+  if (!state.data) return <button className="link-button" onClick={load}>Create content brief</button>
+  return (
+    <div className="brief">
+      <strong>{state.data.title}</strong>
+      <p className="panel-note">{state.data.summary}</p>
+      {state.data.sections.map((section) => <div key={section.title}><h4>{section.title}</h4><ul>{section.items.map((item) => <li key={item}>{item}</li>)}</ul></div>)}
+      {state.data.bullets.length > 0 && <><h4>Next actions</h4><ul>{state.data.bullets.map((item) => <li key={item}>{item}</li>)}</ul></>}
+    </div>
+  )
+}
+
+function PastedAnswer({ projectId, brand, onUsage }) {
+  const [text, setText] = useState('')
+  const [sources, setSources] = useState('')
+  const [state, setState] = useState({ loading: false, data: null, error: '' })
+  async function run(event) {
+    event.preventDefault()
+    setState({ loading: true, data: null, error: '' })
+    try {
+      setState({ loading: false, data: await api('POST', `/api/projects/${projectId}/analyze-answer`, { text, sources }), error: '' })
+      onUsage?.()
+    } catch (caught) {
+      setState({ loading: false, data: null, error: caught.message })
+    }
+  }
+  const data = state.data
+  return (
+    <section className="panel">
+      <h3 className="panel-title">Check a pasted answer (Google AI Overview, Copilot…)</h3>
+      <p className="panel-note">These surfaces have no public API. Paste the answer text, and optionally the source links it shows, to see whether {brand} is named and which brands and sites appear.</p>
+      <form onSubmit={run}>
+        <Field label="Answer text" required><textarea className="large" value={text} onChange={(event) => setText(event.target.value)} placeholder="Paste the AI answer here" /></Field>
+        <Field label="Source links shown with the answer" hint="Optional. One per line."><textarea value={sources} onChange={(event) => setSources(event.target.value)} placeholder="https://…" /></Field>
+        {state.error && <Notice kind="error">{state.error}</Notice>}
+        <button className="primary-button" disabled={state.loading || text.trim().length < 20}>{state.loading ? <Loader2 className="spin" size={17} /> : <Play size={17} />}Analyse answer</button>
+      </form>
+      {data && (
+        <div className="brief">
+          <div className="kpi-row">
+            <Kpi label={`${data.brand} named`} value={data.brandMentioned ? 'Yes' : 'No'} />
+            <Kpi label="Position among brands" value={data.brandPosition ?? '–'} note={`${data.mentions.length} brands named`} />
+            <Kpi label="Sources" value={data.citedDomains.length} />
+            <Kpi label="Own site cited" value={data.citedDomains.length ? (data.ownCited ? 'Yes' : 'No') : '–'} />
+          </div>
+          <p className="panel-note"><strong>Brands in order:</strong> {data.mentions.map((mention) => mention.name).join(' → ') || 'none'}</p>
+          {data.citedDomains.length > 0 && <p className="panel-note"><strong>Sources:</strong> {data.citedDomains.join(', ')}</p>}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function Results({ measurement, project, onUsage }) {
   const summary = measurement.summary
   if (!summary) return null
+  const perception = summary.perception
+  const gap = summary.citationGap || []
   const exportCsv = async () => {
     const detail = await api('GET', `/api/measurements/${measurement.id}?samples=1`)
     const rows = [['Prompt', 'Model surface', 'Model', 'Sample', 'Status', 'Answer', 'Cited URLs']]
@@ -124,12 +191,39 @@ function Results({ measurement, project }) {
         </section>
       </div>
 
+      {perception && (
+        <section className="panel">
+          <h3 className="panel-title">How the answers describe {project.brand}</h3>
+          <div className="sentiment-bar" role="img" aria-label={`${perception.positive} positive, ${perception.neutral} neutral, ${perception.negative} negative of ${perception.classified} answers`}>
+            <i className="pos" style={{ width: `${(perception.positive / perception.classified) * 100}%` }} />
+            <i className="neu" style={{ width: `${(perception.neutral / perception.classified) * 100}%` }} />
+            <i className="neg" style={{ width: `${(perception.negative / perception.classified) * 100}%` }} />
+          </div>
+          <div className="legend"><span><b>{perception.positive}</b> positive</span><span><b>{perception.neutral}</b> neutral</span><span><b>{perception.negative}</b> negative</span><span>of {perception.classified} answers that name the brand</span></div>
+          {perception.attributes.length > 0 && <div className="chip-row" style={{ marginTop: 12 }}>{perception.attributes.map((attribute) => <span className="pill" key={attribute.label}>{attribute.label} · {attribute.count}</span>)}</div>}
+          <p className="panel-note">{perception.method}</p>
+        </section>
+      )}
+
+      {gap.length > 0 && (
+        <section className="panel">
+          <h3 className="panel-title">Citation gap: sources that back competitors but not you</h3>
+          <p className="panel-note">These sites were cited in answers that named another brand and did not name {project.brand}. They are the first places to earn a mention or a listing.</p>
+          <div className="table-wrap">
+            <table className="compact-table">
+              <thead><tr><th>Source</th><th>Answers citing it</th><th>…naming a competitor, not you</th><th>…naming you</th></tr></thead>
+              <tbody>{gap.map((row) => <tr key={row.domain}><td><strong>{row.domain}</strong></td><td>{row.answers}</td><td><span className="pill pill-bad">{row.competitorOnly}</span></td><td>{row.withBrand}</td></tr>)}</tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       <section className="panel">
         <h3 className="panel-title">By prompt (weakest first)</h3>
         <div className="table-wrap">
           <table className="compact-table">
             <thead><tr><th>Prompt</th><th>Visibility</th><th>Avg. position</th><th>Named most often</th></tr></thead>
-            <tbody>{summary.byPrompt.map((row) => <tr key={row.promptId}><td>{row.prompt}</td><td><div className="bar"><i style={{ width: `${row.rate}%` }} /></div>{row.rate}%</td><td>{row.avgPosition ?? '–'}</td><td>{row.topBrands.slice(0, 3).map((brand) => brand.name).join(', ') || '–'}</td></tr>)}</tbody>
+            <tbody>{summary.byPrompt.map((row) => <tr key={row.promptId}><td>{row.prompt}<div><Brief projectId={project.id} prompt={row.prompt} onUsage={onUsage} /></div></td><td><div className="bar"><i style={{ width: `${row.rate}%` }} /></div>{row.rate}%</td><td>{row.avgPosition ?? '–'}</td><td>{row.topBrands.slice(0, 3).map((brand) => brand.name).join(', ') || '–'}</td></tr>)}</tbody>
           </table>
         </div>
       </section>
@@ -343,11 +437,12 @@ export default function Tracking({ account, onUsage }) {
       {latest ? (
         <>
           <section className="panel"><h3 className="panel-title">Visibility over time</h3><Trend measurements={measurements} /></section>
-          <Results measurement={latest} project={project} />
+          <Results measurement={latest} project={project} onUsage={onUsage} />
         </>
       ) : (
         <section className="panel empty-result"><p className="eyeline">Result</p><strong>No measurement yet</strong><p>Add prompts, then run a measurement to see how often {project.brand} is named in live AI answers.</p></section>
       )}
+      <PastedAnswer projectId={project.id} brand={project.brand} onUsage={onUsage} />
     </>
   )
 }

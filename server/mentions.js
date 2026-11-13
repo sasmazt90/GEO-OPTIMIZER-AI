@@ -83,3 +83,42 @@ export function wilson(successes, total) {
   const round = (value) => Math.round(Math.max(0, Math.min(1, value)) * 1000) / 10
   return { rate: round(p), low: round((centre - margin) / denominator), high: round((centre + margin) / denominator) }
 }
+
+// Short raw-text windows around the first brand mention, for perception analysis.
+export function brandExcerpts(answers, names, { limit = 40, radius = 320 } = {}) {
+  const needles = names.map((name) => String(name || '').toLowerCase()).filter((name) => name.length >= 2)
+  const excerpts = []
+  for (const answer of answers) {
+    const text = String(answer || '')
+    const lower = text.toLowerCase()
+    const index = needles.map((needle) => lower.indexOf(needle)).filter((position) => position !== -1).sort((a, b) => a - b)[0]
+    if (index === undefined) continue
+    excerpts.push(text.slice(Math.max(0, index - radius), index + radius).replace(/\s+/g, ' ').trim())
+    if (excerpts.length >= limit) break
+  }
+  return excerpts
+}
+
+// Tallies model-assigned labels in code so totals always add up.
+export function tallyPerception(items, total) {
+  const counts = { positive: 0, neutral: 0, negative: 0 }
+  const attributes = new Map()
+  let classified = 0
+  for (const item of Array.isArray(items) ? items.slice(0, total) : []) {
+    const sentiment = String(item?.sentiment || '').toLowerCase()
+    if (!(sentiment in counts)) continue
+    counts[sentiment] += 1
+    classified += 1
+    for (const raw of Array.isArray(item.attributes) ? item.attributes.slice(0, 4) : []) {
+      const label = String(raw).trim().toLowerCase().slice(0, 40)
+      if (label) attributes.set(label, (attributes.get(label) || 0) + 1)
+    }
+  }
+  if (!classified) return null
+  return {
+    classified,
+    ...counts,
+    attributes: [...attributes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([label, count]) => ({ label, count })),
+    method: 'Sentiment and attributes are assigned by a model to each answer that names the brand; the totals are counted in code.',
+  }
+}

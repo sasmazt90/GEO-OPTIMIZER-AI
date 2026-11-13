@@ -634,6 +634,48 @@ export function createApp({ store, llm, fetcher, billing = null, supabaseAdmin =
     res.json({ prompts: prompts.slice(0, 10) })
   })
 
+  // Analyse an answer the user copied from a surface without an API (for example a Google AI Overview).
+  app.post('/api/projects/:id/analyze-answer', requireAuth, async (req, res) => {
+    const parsed = z.object({ text: z.string().trim().min(20).max(20000), sources: z.string().max(5000).default('') }).safeParse(req.body)
+    if (!parsed.success) return res.status(400).json({ error: 'Paste the answer text (at least 20 characters).' })
+    const project = await loadProject(req, res)
+    if (!project) return
+    await consume(store, req.user.id, req.plan, 'analysis', 1)
+    const discovered = await llm.extractBrands([parsed.data.text]).catch(() => [])
+    const analysis = analyzeAnswer({
+      answer: parsed.data.text,
+      citations: parsed.data.sources.split(/[\s,]+/).filter((item) => /\./.test(item)).slice(0, 40).map((item) => (/^https?:\/\//i.test(item) ? item : `https://${item}`)),
+      brand: project.brand, aliases: project.aliases, domain: project.domain, competitors: project.competitors, extraNames: discovered,
+    })
+    res.json({ ...analysis, brand: project.brand, method: 'Counted from the pasted text. Brand names are matched against the text; nothing is estimated.' })
+  })
+
+  // Content brief for a tracked prompt, grounded in the latest measurement.
+  app.post('/api/projects/:id/brief', requireAuth, async (req, res) => {
+    const parsed = z.object({ prompt: text(300) }).safeParse(req.body)
+    if (!parsed.success) return res.status(400).json({ error: 'Choose a prompt.' })
+    const project = await loadProject(req, res)
+    if (!project) return
+    await consume(store, req.user.id, req.plan, 'analysis', 1)
+    const latest = (await store.listMeasurements(req.user.id, project.id, 10)).find((item) => item.status === 'completed' && item.summary)
+    const row = latest?.summary.byPrompt.find((entry) => entry.prompt === parsed.data.prompt)
+    const page = project.domain ? await fetchEvidence(project.domain) : null
+    const raw = await llm.chatJson(
+      `${systemPrompt('content')}\nWrite a content brief for one page that would make the brand a credible answer to the target question. measured contains real counts from live AI answers: use them to say which brands and sources currently win this question and what the page must offer to earn a mention. Do not restate the numbers differently. Sections after the three required ones: "Recommended outline" (H1 and H2/H3 headings), "Answer block" (a 40 to 70 word direct answer to open the page), "Evidence to include", "Sources worth earning a mention on".`,
+      JSON.stringify({
+        targetQuestion: parsed.data.prompt, brand: project.brand, domain: project.domain, country: project.country, language: project.language,
+        measured: row ? { visibilityRate: row.rate, answers: row.answers, brandsNamedMostOften: row.topBrands } : null,
+        sourcesCitedForThisBrandSet: latest?.summary.citedDomains.slice(0, 8) || [],
+        sourcesCitingCompetitorsOnly: latest?.summary.citationGap?.slice(0, 8) || [],
+        brandPage: page?.evidence ? { title: page.evidence.title, headings: page.evidence.headings?.slice(0, 20), text: page.evidence.textSample?.slice(0, 3000) } : null,
+      }),
+    )
+    if (!raw) return res.status(503).json({ error: 'Content briefs are temporarily unavailable.' })
+    const result = normalizeResult('content', raw)
+    await store.saveRun(req.user.id, 'content', { prompt: parsed.data.prompt, project: project.name }, result)
+    res.json(result)
+  })
+
   app.get('/api/projects/:id/measurements', requireAuth, async (req, res) => {
     const project = await loadProject(req, res)
     if (!project) return

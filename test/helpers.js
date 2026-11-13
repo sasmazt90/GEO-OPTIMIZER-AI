@@ -57,6 +57,10 @@ export function fakeLlm({ canProbe = true, failSurface = null } = {}) {
       const citations = surface === 'Perplexity' ? ['https://www.g2.com/categories/crm', mentionsAcme ? 'https://acme.com/pricing' : 'https://www.salesforce.com/'] : []
       return { answer, citations, model: `fake/${surface.toLowerCase()}` }
     },
+    async classifyPerception(brand, excerpts) {
+      calls.chat += 1
+      return excerpts.map((excerpt, index) => ({ i: index + 1, sentiment: index % 4 === 0 ? 'negative' : 'positive', attributes: index % 2 ? ['easy to set up'] : ['strong forecasting', 'expensive'] }))
+    },
     async extractBrands() {
       calls.chat += 1
       return ['Acme', 'Salesforce', 'HubSpot', 'Pipedrive', 'NotInAnyAnswer']

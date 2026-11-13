@@ -138,6 +138,20 @@ test('tracking: project, prompts, measurement steps and summary', async () => {
     assert.ok(summary.citation.answersWithSources === 6)
     assert.equal(summary.byPrompt.length, 2)
 
+    assert.ok(summary.perception.classified > 0 && summary.perception.classified <= 12)
+    assert.equal(summary.perception.positive + summary.perception.neutral + summary.perception.negative, summary.perception.classified)
+    assert.ok(Array.isArray(summary.citationGap))
+
+    const pasted = await ctx.api('POST', `/api/projects/${project.id}/analyze-answer`, { text: 'For CRM, HubSpot and Salesforce lead; Acme is a newer option.', sources: 'https://www.g2.com/x\nacme.com/pricing' })
+    assert.equal(pasted.status, 200)
+    assert.equal(pasted.body.brandMentioned, true)
+    assert.equal(pasted.body.brandPosition, 3)
+    assert.equal(pasted.body.ownCited, true)
+    assert.equal((await ctx.api('POST', `/api/projects/${project.id}/analyze-answer`, { text: 'short' })).status, 400)
+    const brief = await ctx.api('POST', `/api/projects/${project.id}/brief`, { prompt: 'best crm for mid-market' })
+    assert.equal(brief.status, 200)
+    assert.ok(brief.body.sections.length > 0)
+
     const again = await ctx.api('POST', `/api/measurements/${measurement.id}/step`)
     assert.equal(again.body.status, 'completed')
     const detail = await ctx.api('GET', `/api/measurements/${measurement.id}?samples=1`)

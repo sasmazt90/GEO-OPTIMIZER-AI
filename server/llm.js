@@ -129,6 +129,16 @@ export function createLlm({ env = process.env, fetchImpl = fetch, appUrl = '' } 
       return { answer, citations: collectCitations(data), model }
     },
 
+    // Labels how each excerpt talks about the brand. Returns one item per excerpt.
+    async classifyPerception(brand, excerpts) {
+      const result = await chatJson(
+        `Each numbered excerpt is from an AI assistant answer that mentions the brand "${brand}". For each excerpt, judge only how that brand is portrayed. Return strict JSON: {"items":[{"i":1,"sentiment":"positive|neutral|negative","attributes":["short phrase", ...]}]} with one item per excerpt in order. "attributes" are up to 3 short lowercase phrases for the qualities or criticisms the excerpt attaches to the brand (for example "gentle on sensitive skin", "expensive"); use an empty array if none. Do not invent attributes that are not in the excerpt.`,
+        excerpts.map((excerpt, index) => `[${index + 1}] ${excerpt}`).join('\n\n'),
+        { maxTokens: 2500 },
+      )
+      return Array.isArray(result?.items) ? result.items : []
+    },
+
     // Proposes brand/company names that appear in the answers. The names are
     // only candidates: counting is done in code against the answer text.
     async extractBrands(answers) {
